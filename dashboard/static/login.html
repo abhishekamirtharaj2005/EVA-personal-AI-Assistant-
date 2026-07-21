@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EVA — Remote Login</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            background: #0a0a12;
+            color: #f0f0ff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: rgba(18, 18, 30, 0.95);
+            border: 1px solid rgba(40, 42, 60, 0.8);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 380px;
+            width: 90%;
+            text-align: center;
+            backdrop-filter: blur(20px);
+        }
+        .logo { font-size: 48px; margin-bottom: 10px; }
+        h1 {
+            font-size: 24px;
+            background: linear-gradient(135deg, #00b4d8, #90e0ef);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+        .subtitle { color: #a0a5be; font-size: 14px; margin-bottom: 30px; }
+        .input-group { margin-bottom: 20px; text-align: left; }
+        .input-group label {
+            display: block; font-size: 12px; color: #a0a5be;
+            margin-bottom: 6px; font-weight: 600;
+        }
+        input {
+            width: 100%; padding: 14px 16px;
+            background: #19192a; color: #f0f0ff;
+            border: 2px solid #282a3c; border-radius: 12px;
+            font-size: 18px; text-align: center;
+            letter-spacing: 6px; font-weight: bold;
+            outline: none; transition: border-color 0.3s;
+        }
+        input:focus { border-color: #00b4d8; }
+        input::placeholder { letter-spacing: normal; font-weight: normal; font-size: 14px; }
+        .btn {
+            width: 100%; padding: 14px;
+            background: linear-gradient(135deg, #00b4d8, #0077b6);
+            color: white; border: none; border-radius: 12px;
+            font-size: 16px; font-weight: 600; cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+        .btn:hover { transform: translateY(-1px); opacity: 0.9; }
+        .btn:active { transform: translateY(0); }
+        .error { color: #ff4757; font-size: 13px; margin-top: 12px; display: none; }
+        .status { color: #2ed573; font-size: 13px; margin-top: 12px; display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🤖</div>
+        <h1>EVA Remote</h1>
+        <p class="subtitle">Enter the pairing key shown on your desktop</p>
+
+        <div class="input-group">
+            <label>Pairing Key</label>
+            <input type="text" id="keyInput" placeholder="ABC123"
+                   maxlength="6" autocomplete="off" autofocus>
+        </div>
+
+        <button class="btn" id="connectBtn" onclick="connect()">Connect</button>
+
+        <p class="error" id="errorMsg"></p>
+        <p class="status" id="statusMsg"></p>
+    </div>
+
+    <script>
+        // Auto-fill key from URL params
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('key')) {
+            document.getElementById('keyInput').value = params.get('key');
+        }
+
+        async function connect() {
+            const key = document.getElementById('keyInput').value.trim().toUpperCase();
+            const errorEl = document.getElementById('errorMsg');
+            const statusEl = document.getElementById('statusMsg');
+            const btn = document.getElementById('connectBtn');
+
+            errorEl.style.display = 'none';
+            statusEl.style.display = 'none';
+
+            if (!key || key.length < 4) {
+                errorEl.textContent = 'Please enter a valid pairing key.';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            btn.textContent = 'Connecting...';
+            btn.disabled = true;
+
+            try {
+                const deviceId = 'phone-' + Math.random().toString(36).substr(2, 6);
+                const resp = await fetch('/api/device-login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ key, device_id: deviceId }),
+                });
+
+                if (resp.ok) {
+                    const data = await resp.json();
+                    sessionStorage.setItem('eva_session_key', data.session_key);
+                    sessionStorage.setItem('eva_device_id', deviceId);
+                    statusEl.textContent = 'Connected! Redirecting...';
+                    statusEl.style.display = 'block';
+                    setTimeout(() => window.location.href = '/', 1000);
+                } else {
+                    const err = await resp.json();
+                    errorEl.textContent = err.error || 'Connection failed.';
+                    errorEl.style.display = 'block';
+                }
+            } catch (e) {
+                errorEl.textContent = 'Network error. Check connection.';
+                errorEl.style.display = 'block';
+            }
+
+            btn.textContent = 'Connect';
+            btn.disabled = false;
+        }
+
+        // Enter key support
+        document.getElementById('keyInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') connect();
+        });
+    </script>
+</body>
+</html>

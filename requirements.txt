@@ -1,0 +1,53 @@
+# EVA — Enhanced Virtual Assistant
+# Dependencies
+
+# Core AI
+google-genai>=1.0.0
+google-generativeai>=0.8.0
+
+# Desktop GUI
+PyQt6>=6.6.0
+
+# Audio I/O
+sounddevice>=0.4.6
+numpy>=1.24.0
+
+# Remote backend
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Pairing security
+cryptography>=42.0.0
+qrcode[pil]>=7.4.0
+
+# Browser automation
+playwright>=1.40.0
+
+# Web scraping
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+duckduckgo-search>=5.0.0
+
+# Desktop automation
+pyautogui>=0.9.54
+pygetwindow>=0.0.9
+pyperclip>=1.8.2
+
+# Vision capture
+mss>=9.0.0
+opencv-python>=4.9.0
+Pillow>=10.2.0
+
+# Telemetry
+psutil>=5.9.0
+
+# Docs/media
+python-pptx>=0.6.21
+youtube-transcript-api>=0.6.0
+
+# File safety
+send2trash>=1.8.2
+
+# Windows-only (install separately on Windows)
+# pip install pycaw comtypes pywin32 pywinauto win10toast

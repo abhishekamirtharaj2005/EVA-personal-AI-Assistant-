@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>EVA — Remote Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            background: #0a0a12; color: #f0f0ff;
+            min-height: 100vh; overflow-x: hidden;
+        }
+        .header {
+            background: rgba(18, 18, 30, 0.95);
+            border-bottom: 1px solid #282a3c;
+            padding: 16px 20px;
+            display: flex; align-items: center; justify-content: space-between;
+            position: sticky; top: 0; z-index: 10;
+            backdrop-filter: blur(20px);
+        }
+        .header h1 {
+            font-size: 20px;
+            background: linear-gradient(135deg, #00b4d8, #90e0ef);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .status-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+            background: #2ed573; display: inline-block;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+        }
+        .main { padding: 20px; max-width: 600px; margin: 0 auto; }
+        .card {
+            background: rgba(18, 18, 30, 0.8);
+            border: 1px solid #282a3c; border-radius: 16px;
+            padding: 20px; margin-bottom: 16px;
+        }
+        .card h3 { font-size: 14px; color: #a0a5be; margin-bottom: 12px; }
+        .command-input {
+            display: flex; gap: 8px; margin-bottom: 8px;
+        }
+        .command-input input {
+            flex: 1; padding: 14px 16px;
+            background: #19192a; color: #f0f0ff;
+            border: 2px solid #282a3c; border-radius: 12px;
+            font-size: 15px; outline: none;
+        }
+        .command-input input:focus { border-color: #00b4d8; }
+        .send-btn {
+            padding: 14px 20px; background: linear-gradient(135deg, #00b4d8, #0077b6);
+            color: white; border: none; border-radius: 12px;
+            font-size: 15px; font-weight: 600; cursor: pointer;
+            white-space: nowrap;
+        }
+        .quick-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .quick-btn {
+            padding: 14px; background: #19192a;
+            border: 1px solid #282a3c; border-radius: 12px;
+            color: #f0f0ff; font-size: 14px; cursor: pointer;
+            text-align: center; transition: all 0.2s;
+        }
+        .quick-btn:hover { border-color: #00b4d8; background: rgba(0, 180, 216, 0.1); }
+        .quick-btn .icon { font-size: 24px; display: block; margin-bottom: 6px; }
+        .mic-section { text-align: center; }
+        .mic-btn {
+            width: 80px; height: 80px; border-radius: 50%;
+            background: linear-gradient(135deg, #19192a, #282a3c);
+            border: 3px solid #282a3c; cursor: pointer;
+            font-size: 32px; color: #a0a5be;
+            transition: all 0.3s; display: inline-flex;
+            align-items: center; justify-content: center;
+        }
+        .mic-btn.active {
+            background: linear-gradient(135deg, #00b4d8, #0077b6);
+            border-color: #00b4d8; color: white;
+            animation: pulse-mic 1.5s infinite;
+        }
+        @keyframes pulse-mic {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(0, 180, 216, 0.4); }
+            50% { box-shadow: 0 0 0 15px rgba(0, 180, 216, 0); }
+        }
+        .mic-label { font-size: 12px; color: #a0a5be; margin-top: 8px; }
+        .log-area {
+            max-height: 300px; overflow-y: auto;
+            font-family: 'Cascadia Code', monospace;
+            font-size: 12px; line-height: 1.6; color: #a0a5be;
+        }
+        .log-entry { padding: 4px 0; border-bottom: 1px solid #1a1a2e; }
+        .upload-zone {
+            border: 2px dashed #282a3c; border-radius: 12px;
+            padding: 30px; text-align: center; cursor: pointer;
+            transition: all 0.3s; color: #656882;
+        }
+        .upload-zone:hover { border-color: #00b4d8; color: #00b4d8; }
+        .upload-zone .icon { font-size: 32px; margin-bottom: 8px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🤖 EVA Remote</h1>
+        <span><span class="status-dot"></span> Connected</span>
+    </div>
+
+    <div class="main">
+        <!-- Command Input -->
+        <div class="card">
+            <h3>💬 SEND COMMAND</h3>
+            <div class="command-input">
+                <input type="text" id="cmdInput" placeholder="Type a command...">
+                <button class="send-btn" onclick="sendCommand()">Send</button>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="card">
+            <h3>⚡ QUICK ACTIONS</h3>
+            <div class="quick-actions">
+                <div class="quick-btn" onclick="quickAction('what time is it')">
+                    <span class="icon">🕐</span>Time
+                </div>
+                <div class="quick-btn" onclick="quickAction('get weather')">
+                    <span class="icon">🌤</span>Weather
+                </div>
+                <div class="quick-btn" onclick="quickAction('get system stats')">
+                    <span class="icon">📊</span>System
+                </div>
+                <div class="quick-btn" onclick="quickAction('search latest news')">
+                    <span class="icon">📰</span>News
+                </div>
+            </div>
+        </div>
+
+        <!-- Microphone -->
+        <div class="card">
+            <h3>🎙 VOICE INPUT</h3>
+            <div class="mic-section">
+                <button class="mic-btn" id="micBtn" onclick="toggleMic()">🎤</button>
+                <p class="mic-label" id="micLabel">Tap to speak</p>
+            </div>
+        </div>
+
+        <!-- File Upload -->
+        <div class="card">
+            <h3>📁 FILE TRANSFER</h3>
+            <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+                <div class="icon">📤</div>
+                <p>Tap to upload a file</p>
+            </div>
+            <input type="file" id="fileInput" style="display:none" onchange="uploadFile(this)">
+        </div>
+
+        <!-- Activity Log -->
+        <div class="card">
+            <h3>📋 ACTIVITY LOG</h3>
+            <div class="log-area" id="logArea">
+                <div class="log-entry">EVA Remote Dashboard connected.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const sessionKey = sessionStorage.getItem('eva_session_key') || '';
+        let ws = null;
+        let micActive = false;
+        let mediaRecorder = null;
+
+        // WebSocket connection
+        function connectWS() {
+            const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${proto}//${location.host}/ws`);
+            ws.onopen = () => addLog('WebSocket connected');
+            ws.onmessage = (e) => {
+                try {
+                    const msg = JSON.parse(e.data);
+                    if (msg.text) addLog(msg.text);
+                } catch { addLog(e.data); }
+            };
+            ws.onclose = () => { addLog('WebSocket disconnected'); setTimeout(connectWS, 3000); };
+        }
+        connectWS();
+
+        async function sendCommand() {
+            const input = document.getElementById('cmdInput');
+            const cmd = input.value.trim();
+            if (!cmd) return;
+            input.value = '';
+            addLog('You: ' + cmd);
+
+            try {
+                await fetch('/api/command', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ command: cmd, session_key: sessionKey }),
+                });
+            } catch (e) { addLog('Error: ' + e.message); }
+        }
+
+        function quickAction(cmd) {
+            document.getElementById('cmdInput').value = cmd;
+            sendCommand();
+        }
+
+        async function toggleMic() {
+            const btn = document.getElementById('micBtn');
+            const label = document.getElementById('micLabel');
+
+            if (!micActive) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const audioWs = new WebSocket(`${proto}//${location.host}/ws/phone-audio`);
+
+                    audioWs.onopen = () => {
+                        const ctx = new AudioContext({ sampleRate: 16000 });
+                        const source = ctx.createMediaStreamSource(stream);
+                        const processor = ctx.createScriptProcessor(4096, 1, 1);
+
+                        processor.onaudioprocess = (e) => {
+                            if (audioWs.readyState === WebSocket.OPEN) {
+                                const float32 = e.inputBuffer.getChannelData(0);
+                                const int16 = new Int16Array(float32.length);
+                                for (let i = 0; i < float32.length; i++) {
+                                    int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
+                                }
+                                audioWs.send(int16.buffer);
+                            }
+                        };
+
+                        source.connect(processor);
+                        processor.connect(ctx.destination);
+                        window._audioCtx = ctx;
+                        window._audioStream = stream;
+                        window._audioWs = audioWs;
+                    };
+
+                    btn.classList.add('active');
+                    label.textContent = 'Listening...';
+                    micActive = true;
+                    addLog('🎤 Microphone activated');
+                } catch (e) {
+                    addLog('Mic error: ' + e.message);
+                }
+            } else {
+                if (window._audioCtx) window._audioCtx.close();
+                if (window._audioStream) window._audioStream.getTracks().forEach(t => t.stop());
+                if (window._audioWs) window._audioWs.close();
+                btn.classList.remove('active');
+                label.textContent = 'Tap to speak';
+                micActive = false;
+                addLog('🎤 Microphone deactivated');
+            }
+        }
+
+        async function uploadFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+            addLog('Uploading: ' + file.name);
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const resp = await fetch('/api/upload', { method: 'POST', body: formData });
+                if (resp.ok) addLog('✅ Uploaded: ' + file.name);
+                else addLog('❌ Upload failed');
+            } catch (e) { addLog('Upload error: ' + e.message); }
+            input.value = '';
+        }
+
+        function addLog(text) {
+            const area = document.getElementById('logArea');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.textContent = new Date().toLocaleTimeString() + ' — ' + text;
+            area.appendChild(entry);
+            area.scrollTop = area.scrollHeight;
+        }
+
+        // Enter key for command input
+        document.getElementById('cmdInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendCommand();
+        });
+
+        // Redirect to login if not paired
+        if (!sessionKey) {
+            // Allow direct access without key for now
+        }
+    </script>
+</body>
+</html>
