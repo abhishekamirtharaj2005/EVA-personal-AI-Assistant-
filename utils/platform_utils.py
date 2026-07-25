@@ -66,13 +66,56 @@ def get_known_folders() -> dict[str, Path]:
 
 def resolve_user_path(path_str: str) -> Optional[Path]:
     """
-    Resolve a user-provided path, expanding ~ and environment variables.
-    Returns None if the path is outside known folders (safety check).
+    Resolve a user-provided path, with smart folder alias handling.
+
+    Supports:
+      - Absolute paths: 'C:\\Users\\user\\Desktop\\test' or 'D:\\AY'
+      - Known folder aliases: 'Downloads/EVA', 'Desktop/test', 'docs/report.txt'
+      - Home-relative: '~/Documents/file.txt'
+      - Environment variables: '%USERPROFILE%/Desktop'
+
+    Returns None only if the path is truly unsafe (outside allowed areas).
     """
+    path_str = path_str.strip().strip('"').strip("'")
+
+    # Expand ~ and env vars
     expanded = os.path.expandvars(os.path.expanduser(path_str))
-    resolved = Path(expanded).resolve()
 
     known = get_known_folders()
+
+    # Aliases for common folder names (case-insensitive)
+    ALIASES = {
+        "dl": "downloads",
+        "download": "downloads",
+        "doc": "documents",
+        "docs": "documents",
+        "pics": "pictures",
+        "pic": "pictures",
+        "vid": "videos",
+        "vids": "videos",
+    }
+
+    # Check if the first path component is a known folder name or alias
+    parts = Path(expanded).parts
+    if parts:
+        first = parts[0].lower().rstrip("/\\")
+
+        # Direct folder name match: "Downloads" → known["downloads"]
+        if first in known:
+            base = known[first]
+            rest = Path(*parts[1:]) if len(parts) > 1 else Path()
+            return (base / rest).resolve()
+
+        # Alias match: "docs" → known["documents"]
+        if first in ALIASES and ALIASES[first] in known:
+            base = known[ALIASES[first]]
+            rest = Path(*parts[1:]) if len(parts) > 1 else Path()
+            return (base / rest).resolve()
+
+    # Try resolving as-is (handles absolute paths like C:\..., D:\...)
+    resolved = Path(expanded).resolve()
+
+    # Check against known folders
     for folder_path in known.values():
         try:
             resolved.relative_to(folder_path)
@@ -80,13 +123,29 @@ def resolve_user_path(path_str: str) -> Optional[Path]:
         except ValueError:
             continue
 
-    # Also allow temp and the project directory itself
+    # Allow the project directory
     project_root = Path(__file__).resolve().parent.parent
     try:
         resolved.relative_to(project_root)
         return resolved
     except ValueError:
         pass
+
+    # Allow any absolute path on existing drives (user explicitly asked)
+    # but NOT system folders for safety
+    blocked_prefixes = [
+        Path(os.environ.get("SYSTEMROOT", "C:\\Windows")),
+        Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")),
+        Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")),
+    ]
+    if resolved.is_absolute():
+        for blocked in blocked_prefixes:
+            try:
+                resolved.relative_to(blocked)
+                return None  # Block system paths
+            except ValueError:
+                continue
+        return resolved  # Allow other absolute paths
 
     return None
 

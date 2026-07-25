@@ -264,6 +264,7 @@ class EvaLive:
 
         self._emit_state("speaking")
 
+
     # ── Playback Task ───────────────────────────────────────────
 
     async def _play_audio_task(self) -> None:

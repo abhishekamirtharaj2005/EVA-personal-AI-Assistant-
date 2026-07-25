@@ -95,31 +95,79 @@ def manage_files(action: str, path: str, destination: str = "",
             return f"Created file: {path} ({len(content)} characters)"
 
         elif action == "move":
+            if not resolved.exists():
+                return f"Cannot move — source does not exist: {resolved}"
             dest_resolved, err = _validate_path(destination)
             if err:
                 return err
+            # If destination is a directory, move into it
+            if dest_resolved.exists() and dest_resolved.is_dir():
+                dest_resolved = dest_resolved / resolved.name
             shutil.move(str(resolved), str(dest_resolved))
-            return f"Moved {resolved.name} → {destination}"
+            logger.info(f"Moved: {resolved} → {dest_resolved}")
+            return f"Moved {resolved.name} → {dest_resolved}"
 
         elif action == "copy":
+            if not resolved.exists():
+                return f"Cannot copy — source does not exist: {resolved}"
             dest_resolved, err = _validate_path(destination)
             if err:
                 return err
             if resolved.is_dir():
                 shutil.copytree(str(resolved), str(dest_resolved))
             else:
+                # If destination is a directory, copy into it
+                if dest_resolved.exists() and dest_resolved.is_dir():
+                    dest_resolved = dest_resolved / resolved.name
                 shutil.copy2(str(resolved), str(dest_resolved))
-            return f"Copied {resolved.name} → {destination}"
+            logger.info(f"Copied: {resolved} → {dest_resolved}")
+            return f"Copied {resolved.name} → {dest_resolved}"
 
         elif action == "rename":
-            new_path = resolved.parent / destination  # destination = new name
+            if not resolved.exists():
+                return f"Cannot rename — does not exist: {resolved}"
+            # Smart destination: if it contains path separators or
+            # looks like a known folder path, resolve it fully
+            if "/" in destination or "\\" in destination:
+                dest_resolved, err = _validate_path(destination)
+                if err:
+                    return err
+                new_path = dest_resolved
+            else:
+                # Simple name — rename in same directory
+                new_path = resolved.parent / destination
+            if new_path.exists():
+                return f"Cannot rename — '{new_path.name}' already exists at {new_path.parent}"
             resolved.rename(new_path)
-            return f"Renamed {resolved.name} → {destination}"
+            logger.info(f"Renamed: {resolved} → {new_path}")
+            return f"Renamed {resolved.name} → {new_path.name}"
 
         elif action == "delete":
-            from send2trash import send2trash
-            send2trash(str(resolved))
-            return f"Moved to recycle bin: {resolved.name}"
+            if not resolved.exists():
+                return f"Cannot delete — does not exist: {resolved}"
+            name = resolved.name
+            is_dir = resolved.is_dir()
+            try:
+                from send2trash import send2trash
+                send2trash(str(resolved))
+                kind = "folder" if is_dir else "file"
+                logger.info(f"Deleted {kind} (recycle bin): {resolved}")
+                return f"Moved to recycle bin: {name}"
+            except Exception as trash_err:
+                logger.warning(
+                    f"send2trash failed for {resolved}: {trash_err}, "
+                    "falling back to permanent delete"
+                )
+                # Fallback: permanent delete
+                try:
+                    if is_dir:
+                        shutil.rmtree(str(resolved))
+                    else:
+                        os.remove(str(resolved))
+                    kind = "folder" if is_dir else "file"
+                    return f"Permanently deleted {kind}: {name}"
+                except Exception as perm_err:
+                    return f"Delete failed: {perm_err} (path: {resolved})"
 
         elif action == "info":
             if not resolved.exists():
@@ -140,10 +188,13 @@ def manage_files(action: str, path: str, destination: str = "",
             return f"Unknown action: {action}"
 
     except PermissionError:
-        return f"Permission denied: {path}"
+        logger.warning(f"Permission denied: {resolved}")
+        return f"Permission denied: {path} ({resolved})"
     except FileNotFoundError:
-        return f"File not found: {path}"
+        logger.warning(f"File not found: {resolved}")
+        return f"File not found: {path} ({resolved})"
     except Exception as e:
+        logger.error(f"File operation '{action}' failed for {path}: {e}")
         return f"File operation failed: {e}"
 
 

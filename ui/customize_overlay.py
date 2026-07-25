@@ -312,6 +312,7 @@ class SettingsPanel(QWidget):
             config.get("temp_alert_threshold", 85))
         self._city_input.setText(config.get("city", ""))
 
+
     def _save_and_close(self) -> None:
         """Save all settings and close."""
         config.update(

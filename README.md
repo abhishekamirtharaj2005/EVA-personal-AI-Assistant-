@@ -56,7 +56,7 @@ The UI features a cyberpunk aesthetic with:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/EVA.git
+git clone https://github.com/abhishekamirtharaj2005/EVA-personal-AI-Assistant-.git
 cd EVA
 
 # Install dependencies
