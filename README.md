@@ -28,7 +28,12 @@ EVA is a real-time voice assistant that runs on your desktop. It connects to **G
 - 🎬 **Media playback** — play YouTube videos by voice command
 - ⏰ **Reminders & timers** — schedule notifications with custom messages
 - 🔧 **Code generation** — scaffold code, review files, run dev tasks
-- 🧠 **Proactive mode** — EVA can initiate conversation when you're idle
+- 🧠 **Proactive mode** — context-aware, rotating check-ins when you're idle
+- 💾 **Session memory** — remembers last session, references it on next startup
+- 📡 **Background monitoring** — opt-in daily news checks on topics you pick
+- 👁️ **Instant vision** — EVA speaks "I'm looking" while analyzing your screen
+- 🏎️ **Parallel news search** — races DDG + Gemini, first result wins
+- 🦙 **Local LLM fallback** — Ollama auto-fallback when Gemini is rate-limited
 - 🎨 **Cyberpunk UI** — neon glows, hex grid, scanlines, animated HUD orb
 
 ---
@@ -91,6 +96,7 @@ All settings are stored in `config/settings.json` and can be changed via the **S
 | **Proactive Mode** | Auto-engage after idle (default: 5 min) |
 | **Morning Briefing** | Greeting on startup |
 | **System Alerts** | CPU/RAM/GPU/Temp thresholds |
+| **Ollama** | Enable/disable, URL, model name (auto-detect) |
 | **City** | For weather reports |
 
 ---
@@ -106,14 +112,18 @@ EVA/
 │   ├── memory.json         # Conversation memory
 │   ├── certs/              # SSL certificates for dashboard
 │   ├── logs/               # Application logs
+│   ├── sessions.json       # Session memory (auto-generated)
+│   ├── monitors.json       # Topic monitors (auto-generated)
 │   ├── reminders/          # Scheduled reminders
 │   └── uploads/            # File upload staging
 ├── core/                   # Engine core
 │   ├── eva_live.py         # Gemini Live session orchestrator
 │   ├── audio_manager.py    # Mic input + speaker output streams
 │   ├── tool_registry.py    # Tool declaration & dispatch
-│   └── system_prompt.py    # AI system prompt builder
-├── actions/                # 19 action modules (27 tools)
+│   ├── system_prompt.py    # AI system prompt builder
+│   ├── ollama_client.py    # Ollama local LLM REST client
+│   └── llm_router.py       # Smart Gemini→Ollama fallback router
+├── actions/                # 20 action modules (28 tools)
 │   ├── browser_control.py  # Web browsing via Playwright
 │   ├── computer_control.py # Mouse, keyboard, windows
 │   ├── computer_settings.py# Volume, brightness, WiFi, wallpaper
@@ -125,13 +135,14 @@ EVA/
 │   ├── flight_finder.py    # Flight search
 │   ├── game_updater.py     # Steam/Epic game updates
 │   ├── open_app.py         # Application launcher
-│   ├── proactive.py        # Idle-triggered engagement
+│   ├── proactive.py        # Context-aware proactive check-ins
 │   ├── reminder.py         # Timers & scheduled reminders
-│   ├── screen_processor.py # Screenshot analysis via Gemini
+│   ├── screen_processor.py # Instant-ACK vision analysis
 │   ├── send_message.py     # Email & messaging
 │   ├── system_monitor.py   # CPU/RAM/GPU/Temp metrics
+│   ├── topic_monitor.py    # Background news monitoring
 │   ├── weather_report.py   # Weather via web search
-│   ├── web_search.py       # DuckDuckGo + Gemini grounded search
+│   ├── web_search.py       # Parallel DDG + Gemini news race
 │   └── youtube_video.py    # YouTube playback & transcripts
 ├── ui/                     # PyQt6 cyberpunk interface
 │   ├── styles.py           # Theme system (neon palette, fonts)
@@ -149,7 +160,9 @@ EVA/
 │   ├── server.py           # FastAPI + WebSocket server
 │   └── static/             # Web client (HTML/CSS/JS)
 ├── memory/                 # Persistence layer
-│   └── config_manager.py   # JSON-backed settings store
+│   ├── config_manager.py   # JSON-backed settings store
+│   ├── memory_manager.py   # Long-term memory (categories)
+│   └── session_memory.py   # Session summaries (consume-once)
 └── utils/                  # Shared utilities
     └── helpers.py          # Common helper functions
 ```
@@ -171,13 +184,14 @@ EVA/
 | `flight_finder` | `search_flights` | Flight search |
 | `game_updater` | `update_games` | Steam/Epic game management |
 | `open_app` | `open_application` | Application launcher |
-| `proactive` | `proactive_check` | Idle engagement engine |
+| `proactive` | `proactive_check` | Rotating context-aware check-ins |
 | `reminder` | `set_reminder` | Timers & reminders |
-| `screen_processor` | `analyze_screen`, `analyze_webcam` | Vision analysis |
+| `screen_processor` | `analyze_screen`, `analyze_webcam` | Instant-ACK vision analysis |
 | `send_message` | `send_message` | Email & messaging |
 | `system_monitor` | `get_system_stats` | System telemetry |
+| `topic_monitor` | `monitor_topic` | Background daily news watcher |
 | `weather_report` | `get_weather` | Weather lookup |
-| `web_search` | `search_web` | Web search (DuckDuckGo + Gemini) |
+| `web_search` | `search_web` | Parallel DDG + Gemini news race |
 | `youtube_video` | `play_youtube` | YouTube playback |
 
 ---

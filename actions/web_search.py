@@ -1,20 +1,20 @@
 """
 EVA Web Search — Multi-mode web search tool.
-Runs Gemini-grounded search and DuckDuckGo concurrently (primary + fallback).
+For news mode: races DDG News vs Gemini grounded search in parallel.
+First valid result wins; the loser is discarded.
 """
 
 import logging
+import threading
 from typing import Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from core.tool_dispatcher import register_tool
 
 logger = logging.getLogger("eva.actions.web_search")
-_search_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="search")
 
 
 def _duckduckgo_search(query: str, max_results: int = 5) -> list[dict]:
-    """DuckDuckGo search (fallback)."""
+    """DuckDuckGo text search."""
     try:
         from duckduckgo_search import DDGS
         with DDGS() as ddgs:
@@ -91,6 +91,81 @@ def _format_results(results: list[dict], mode: str) -> str:
     return "\n\n".join(lines)
 
 
+# ── Parallel News Race ──────────────────────────────────────────
+
+_MIN_VALID_LENGTH = 50  # Minimum chars for a "valid" result
+
+
+def _race_news_search(query: str) -> str:
+    """
+    Race DDG News vs Gemini grounded search.
+    First valid result wins. Loser is discarded.
+    Uses Lock + Event for thread-safe first-write-wins.
+    """
+    result_slot: list[Optional[str]] = [None]
+    result_lock = threading.Lock()
+    done_event = threading.Event()
+    fail_count = [0]
+
+    def _try_ddg():
+        try:
+            results = _duckduckgo_news(query, max_results=5)
+            if results:
+                formatted = _format_results(results, "news")
+                if len(formatted) >= _MIN_VALID_LENGTH:
+                    with result_lock:
+                        if result_slot[0] is None:
+                            result_slot[0] = formatted
+                            logger.info("News race: DDG won")
+                    done_event.set()
+                    return
+        except Exception as e:
+            logger.warning(f"DDG news race failed: {e}")
+
+        with result_lock:
+            fail_count[0] += 1
+            if fail_count[0] >= 2:
+                done_event.set()
+
+    def _try_gemini():
+        try:
+            adapted = f"latest news {query}"
+            result = _gemini_grounded_search(adapted)
+            if result and len(result) >= _MIN_VALID_LENGTH:
+                with result_lock:
+                    if result_slot[0] is None:
+                        result_slot[0] = result
+                        logger.info("News race: Gemini won")
+                done_event.set()
+                return
+        except Exception as e:
+            logger.warning(f"Gemini news race failed: {e}")
+
+        with result_lock:
+            fail_count[0] += 1
+            if fail_count[0] >= 2:
+                done_event.set()
+
+    # Launch both as daemon threads
+    t1 = threading.Thread(target=_try_ddg, daemon=True)
+    t2 = threading.Thread(target=_try_gemini, daemon=True)
+    t1.start()
+    t2.start()
+
+    # Wait for first valid result (or timeout)
+    done_event.wait(timeout=10.0)
+
+    with result_lock:
+        winner = result_slot[0]
+
+    if winner:
+        return winner
+
+    return "I couldn't find any news results. Please try rephrasing your query."
+
+
+# ── Main Tool ───────────────────────────────────────────────────
+
 @register_tool(
     name="search_web",
     description="Search the web for current information. Supports multiple modes: "
@@ -116,15 +191,18 @@ def _format_results(results: list[dict], mode: str) -> str:
 )
 def search_web(query: str, mode: str = "search") -> str:
     """
-    Multi-mode web search. Runs Gemini grounded search and DuckDuckGo
-    concurrently, using the best available result.
+    Multi-mode web search.
+    - News mode: races DDG News vs Gemini grounded (first wins).
+    - Other modes: Gemini primary, DDG fallback.
     """
     logger.info(f"Web search: mode={mode}, query='{query}'")
 
-    # Adapt query for mode
+    # ── NEWS MODE: parallel race ────────────────────────────
     if mode == "news":
-        adapted_query = f"latest news {query}"
-    elif mode == "price":
+        return _race_news_search(query)
+
+    # ── OTHER MODES: Gemini primary + DDG fallback ──────────
+    if mode == "price":
         adapted_query = f"current price {query}"
     elif mode == "compare":
         adapted_query = f"comparison {query}"
@@ -133,38 +211,35 @@ def search_web(query: str, mode: str = "search") -> str:
     else:
         adapted_query = query
 
-    # Run both search engines concurrently
-    gemini_result = None
-    ddg_results = []
-
-    futures = {}
-    futures["gemini"] = _search_executor.submit(_gemini_grounded_search, adapted_query)
-
-    if mode == "news":
-        futures["ddg"] = _search_executor.submit(_duckduckgo_news, adapted_query, 5)
-    else:
-        futures["ddg"] = _search_executor.submit(_duckduckgo_search, adapted_query, 5)
-
-    for key, future in futures.items():
-        try:
-            result = future.result(timeout=15)
-            if key == "gemini":
-                gemini_result = result
-            else:
-                ddg_results = result or []
-        except Exception as e:
-            logger.warning(f"{key} search timed out or failed: {e}")
-
-    # Prefer Gemini grounded search; fall back to DuckDuckGo
-    if gemini_result:
-        summary = gemini_result
+    # Try Gemini grounded search first
+    gemini_result = _gemini_grounded_search(adapted_query)
+    if gemini_result and len(gemini_result) >= _MIN_VALID_LENGTH:
+        # Also fetch DDG for additional sources
+        ddg_results = _duckduckgo_search(adapted_query, 3)
         if ddg_results:
-            summary += "\n\n---\nAdditional sources:\n"
-            summary += _format_results(ddg_results[:3], mode)
-        return summary
+            gemini_result += "\n\n---\nAdditional sources:\n"
+            gemini_result += _format_results(ddg_results, mode)
+        return gemini_result
 
+    # Fallback to DuckDuckGo
+    ddg_results = _duckduckgo_search(adapted_query, 5)
     if ddg_results:
         return _format_results(ddg_results, mode)
+
+    # Last resort: ask Ollama from its general knowledge
+    try:
+        from core.ollama_client import ollama
+        if ollama.is_available():
+            result = ollama.generate(
+                f"Answer this question based on your knowledge: {adapted_query}"
+            )
+            if result and len(result) >= _MIN_VALID_LENGTH:
+                return (
+                    f"*[Answered from local LLM — no live web data]*\n\n"
+                    f"{result}"
+                )
+    except Exception:
+        pass
 
     return "I couldn't find any results for that query. Please try rephrasing."
 

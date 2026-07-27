@@ -1,11 +1,13 @@
 """
 EVA Screen Processor — Screen capture + webcam vision analysis.
-Captures screen/webcam, compresses, sends to Gemini for analysis.
+Instant acknowledgment: returns a quick "looking now" response so EVA
+speaks while capturing. The real analysis follows as a second turn.
 """
 
 import base64
 import io
 import logging
+import threading
 import time
 from typing import Optional
 
@@ -13,9 +15,20 @@ from core.tool_dispatcher import register_tool
 
 logger = logging.getLogger("eva.actions.screen_processor")
 
-_last_screen_capture = 0.0
-_last_webcam_capture = 0.0
-_COOLDOWN = 5.0  # seconds between captures
+# ── Cooldown & busy state ───────────────────────────────────────
+_COOLDOWN = 4.0  # seconds between captures
+_busy = False
+_busy_since = 0.0  # monotonic timestamp
+_busy_lock = threading.Lock()
+
+# Reference to the EvaLive instance (set at startup)
+_eva_live_ref = None
+
+
+def set_eva_live_ref(ref) -> None:
+    """Set the EvaLive instance reference for injecting vision results."""
+    global _eva_live_ref
+    _eva_live_ref = ref
 
 
 def _capture_screen() -> Optional[bytes]:
@@ -62,30 +75,49 @@ def _capture_webcam() -> Optional[bytes]:
 
 
 def _analyze_image(image_bytes: bytes, prompt: str) -> str:
-    """Send an image to Gemini for vision analysis."""
+    """Send an image to Gemini (or Ollama fallback) for vision analysis."""
     try:
-        import google.generativeai as genai
-        from memory.config_manager import config
-
-        api_key = config.get("api_key")
-        if not api_key:
-            return "Error: No API key configured."
-
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.0-flash")
-
-        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-        response = model.generate_content([
-            prompt,
-            {"mime_type": "image/jpeg", "data": image_b64},
-        ])
-
-        if response and response.text:
-            return response.text
-        return "I captured the image but couldn't analyze it."
+        from core.llm_router import smart_generate
+        result = smart_generate(prompt, image_bytes=image_bytes)
+        return result
     except Exception as e:
         logger.error(f"Image analysis failed: {e}")
         return f"Image analysis failed: {str(e)}"
+
+
+def _background_capture_and_analyze(
+    capture_fn, prompt: str, source_label: str
+) -> None:
+    """
+    Run capture + analysis in a background thread, then inject the
+    result back into the live session as a follow-up turn.
+    """
+    global _busy
+
+    try:
+        image_bytes = capture_fn()
+        if image_bytes is None:
+            result = f"Failed to capture {source_label}."
+        else:
+            result = _analyze_image(image_bytes, prompt)
+
+        # Inject the real analysis as a follow-up message
+        if _eva_live_ref:
+            _eva_live_ref.inject_text_command(
+                f"[VISION RESULT — {source_label}]\n"
+                f"Here is the actual analysis of what you see:\n\n"
+                f"{result}\n\n"
+                f"Now describe this to the user naturally. "
+                f"Do NOT say you were 'looking' — just share the findings."
+            )
+        else:
+            logger.warning("No EvaLive ref — cannot inject vision result")
+
+    except Exception as e:
+        logger.error(f"Background {source_label} analysis failed: {e}")
+    finally:
+        with _busy_lock:
+            _busy = False
 
 
 @register_tool(
@@ -103,21 +135,38 @@ def _analyze_image(image_bytes: bytes, prompt: str) -> str:
         "required": [],
     },
     category="vision",
-    cooldown_seconds=5.0,
+    cooldown_seconds=4.0,
 )
 def analyze_screen(prompt: str = "Describe what you see on the screen in detail.") -> str:
-    """Capture the screen and analyze it with Gemini vision."""
-    global _last_screen_capture
-    now = time.time()
-    if now - _last_screen_capture < _COOLDOWN:
-        return "Screen was just analyzed. Please wait a moment before asking again."
-    _last_screen_capture = now
+    """
+    Capture the screen and analyze it with Gemini vision.
+    Returns an immediate acknowledgment; real analysis follows as a second turn.
+    """
+    global _busy, _busy_since
 
-    image_bytes = _capture_screen()
-    if image_bytes is None:
-        return "Failed to capture the screen."
+    with _busy_lock:
+        if _busy and (time.monotonic() - _busy_since) < _COOLDOWN:
+            return (
+                "I'm still processing the previous capture. "
+                "Please wait a moment before asking again."
+            )
+        _busy = True
+        _busy_since = time.monotonic()
 
-    return _analyze_image(image_bytes, prompt)
+    # Spawn background thread for capture + analysis
+    thread = threading.Thread(
+        target=_background_capture_and_analyze,
+        args=(_capture_screen, prompt, "screen"),
+        daemon=True,
+    )
+    thread.start()
+
+    # Return immediate acknowledgment
+    return (
+        "[ACK] Tell the user in ONE short natural sentence that you are "
+        "looking at their screen right now. Do NOT describe or guess any "
+        "content — the actual analysis will arrive in the next message."
+    )
 
 
 @register_tool(
@@ -135,21 +184,38 @@ def analyze_screen(prompt: str = "Describe what you see on the screen in detail.
         "required": [],
     },
     category="vision",
-    cooldown_seconds=5.0,
+    cooldown_seconds=4.0,
 )
 def analyze_webcam(prompt: str = "Describe what you see through the webcam.") -> str:
-    """Capture from the webcam and analyze with Gemini vision."""
-    global _last_webcam_capture
-    now = time.time()
-    if now - _last_webcam_capture < _COOLDOWN:
-        return "Webcam was just analyzed. Please wait a moment."
-    _last_webcam_capture = now
+    """
+    Capture from the webcam and analyze with Gemini vision.
+    Returns an immediate acknowledgment; real analysis follows as a second turn.
+    """
+    global _busy, _busy_since
 
-    image_bytes = _capture_webcam()
-    if image_bytes is None:
-        return "Failed to access the webcam. It may be in use or not available."
+    with _busy_lock:
+        if _busy and (time.monotonic() - _busy_since) < _COOLDOWN:
+            return (
+                "I'm still processing the previous capture. "
+                "Please wait a moment before asking again."
+            )
+        _busy = True
+        _busy_since = time.monotonic()
 
-    return _analyze_image(image_bytes, prompt)
+    # Spawn background thread for capture + analysis
+    thread = threading.Thread(
+        target=_background_capture_and_analyze,
+        args=(_capture_webcam, prompt, "webcam"),
+        daemon=True,
+    )
+    thread.start()
+
+    # Return immediate acknowledgment
+    return (
+        "[ACK] Tell the user in ONE short natural sentence that you are "
+        "looking through their camera right now. Do NOT describe or guess "
+        "any content — the actual analysis will arrive in the next message."
+    )
 
 
 def get_screen_image_bytes() -> Optional[bytes]:

@@ -185,5 +185,6 @@ def load_all_tools() -> None:
     import actions.dev_agent
     import actions.desktop
     import actions.proactive
+    import actions.topic_monitor
 
     logger.info(f"Loaded {get_tool_count()} tools: {get_tool_names()}")

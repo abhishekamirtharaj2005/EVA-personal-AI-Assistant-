@@ -45,6 +45,12 @@ _DEFAULTS = {
     "gpu_alert_threshold": 90,
     "temp_alert_threshold": 85,
 
+    # ── Local LLM (Ollama) ────────────────────────────────
+    "ollama_enabled": True,
+    "ollama_url": "http://localhost:11434",
+    "ollama_model": "",             # Auto-detect if blank
+    "ollama_vision_model": "",      # Auto-detect if blank
+
     # ── Misc ──────────────────────────────────────────────
     "clipboard_min_chars": 10,
     "dashboard_port": 8765,

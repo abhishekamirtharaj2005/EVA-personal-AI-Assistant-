@@ -37,6 +37,8 @@ build/
 # ─── EVA Config (contains API keys & user data) ──────────
 config/settings.json
 config/memory.json
+config/sessions.json
+config/monitors.json
 config/certs/
 config/logs/
 config/reminders/

@@ -114,6 +114,42 @@ class SettingsPanel(QWidget):
         self._anthropic_key = self._api_key_field("Anthropic API Key")
         layout.addWidget(self._anthropic_key)
 
+        # ── Ollama (Local LLM) ──────────────────────────────
+        layout.addSpacing(16)
+        layout.addWidget(self._section_label("OLLAMA (LOCAL LLM)"))
+
+        self._ollama_check = QCheckBox("Enable Ollama fallback")
+        self._ollama_check.setFont(theme.font_hud(10))
+        self._ollama_check.setStyleSheet(f"color: {theme.text_primary.name()};")
+        layout.addWidget(self._ollama_check)
+
+        self._ollama_url = QLineEdit()
+        self._ollama_url.setPlaceholderText("http://localhost:11434")
+        self._ollama_url.setStyleSheet(f"""
+            QLineEdit {{
+                background: rgba(255,255,255,0.05);
+                border: 1px solid {theme.accent_dim.name()};
+                color: {theme.text_primary.name()};
+                padding: 6px 10px;
+                font-family: \"{theme.font_mono}\";
+                font-size: 11px;
+            }}
+        """)
+        self._ollama_url.setFixedHeight(36)
+        layout.addWidget(self._ollama_url)
+
+        self._ollama_model = QLineEdit()
+        self._ollama_model.setPlaceholderText("Model name (blank = auto-detect)")
+        self._ollama_model.setStyleSheet(self._ollama_url.styleSheet())
+        self._ollama_model.setFixedHeight(36)
+        layout.addWidget(self._ollama_model)
+
+        # Status indicator
+        self._ollama_status = QLabel("// Status: checking...")
+        self._ollama_status.setFont(theme.font_hud(9))
+        self._ollama_status.setStyleSheet(f"color: {theme.text_dim.name()};")
+        layout.addWidget(self._ollama_status)
+
         layout.addStretch()
 
         note = QLabel("// Keys are stored locally in config/settings.json")
@@ -312,6 +348,13 @@ class SettingsPanel(QWidget):
             config.get("temp_alert_threshold", 85))
         self._city_input.setText(config.get("city", ""))
 
+        # Ollama settings
+        self._ollama_check.setChecked(config.get("ollama_enabled", True))
+        self._ollama_url.setText(
+            config.get("ollama_url", "http://localhost:11434"))
+        self._ollama_model.setText(config.get("ollama_model", ""))
+        self._refresh_ollama_status()
+
 
     def _save_and_close(self) -> None:
         """Save all settings and close."""
@@ -332,6 +375,9 @@ class SettingsPanel(QWidget):
             ram_alert_threshold=self._ram_thresh["slider"].value(),
             temp_alert_threshold=self._temp_thresh["slider"].value(),
             city=self._city_input.text().strip(),
+            ollama_enabled=self._ollama_check.isChecked(),
+            ollama_url=self._ollama_url.text().strip() or "http://localhost:11434",
+            ollama_model=self._ollama_model.text().strip(),
         )
 
         # Apply accent color live
@@ -354,6 +400,42 @@ class SettingsPanel(QWidget):
         self._model_combo.setCurrentIndex(0)
         self._voice_combo.setCurrentIndex(0)
         self._city_input.clear()
+        self._ollama_check.setChecked(True)
+        self._ollama_url.setText("http://localhost:11434")
+        self._ollama_model.clear()
+
+    def _refresh_ollama_status(self) -> None:
+        """Check Ollama server status and update the label."""
+        import threading
+
+        def _check():
+            try:
+                from core.ollama_client import ollama
+                status = ollama.get_status()
+                if status["available"]:
+                    models = status["models"]
+                    text_m = status.get("text_model", "?")
+                    vision_m = status.get("vision_model", "none")
+                    label = (
+                        f"// Status: ✓ Connected ({len(models)} models) | "
+                        f"Text: {text_m} | Vision: {vision_m}"
+                    )
+                    color = "#00ff88"
+                else:
+                    label = "// Status: ✗ Not running — start with 'ollama serve'"
+                    color = "#ff4444"
+            except Exception:
+                label = "// Status: ✗ Could not check"
+                color = "#ff4444"
+
+            # Update UI from main thread
+            try:
+                self._ollama_status.setText(label)
+                self._ollama_status.setStyleSheet(f"color: {color};")
+            except RuntimeError:
+                pass  # Widget may have been deleted
+
+        threading.Thread(target=_check, daemon=True).start()
 
     def _on_hue_changed(self, hue: int) -> None:
         color = QColor.fromHsl(hue, 255, 160)

@@ -18,6 +18,7 @@ from core.tool_dispatcher import dispatch, load_all_tools, get_all_declarations
 from core.system_prompt import build_system_prompt
 from memory.config_manager import config
 from memory.memory_manager import memory
+from memory.session_memory import session_memory
 
 logger = logging.getLogger("eva.live")
 
@@ -43,6 +44,7 @@ class EvaLive:
         self._is_speaking = False
         self._last_interaction_time = time.time()
         self._interrupted = False
+        self._conversation_log: list[str] = []  # Recent turns for session summary
 
     async def start(self) -> None:
         """Initialize and start all concurrent tasks."""
@@ -56,6 +58,13 @@ class EvaLive:
         # Load all tool modules
         load_all_tools()
         logger.info("All tools loaded")
+
+        # Wire up vision module's reference to this instance
+        try:
+            from actions.screen_processor import set_eva_live_ref
+            set_eva_live_ref(self)
+        except Exception:
+            pass
 
         # Initialize audio manager
         self._audio = AudioManager(loop=self._loop)
@@ -131,6 +140,7 @@ class EvaLive:
                     asyncio.create_task(self._proactive_mode_task(), name="proactive"),
                     asyncio.create_task(self._dashboard_command_task(), name="dashboard_cmd"),
                     asyncio.create_task(self._relay_phone_audio_task(), name="phone_audio"),
+                    asyncio.create_task(self._topic_monitor_task(), name="topic_monitor"),
                 ]
 
                 # Send startup briefing
@@ -152,8 +162,12 @@ class EvaLive:
             return
 
     async def stop(self) -> None:
-        """Stop all tasks and close the session."""
+        """Stop all tasks, save session summary, and close."""
         self._running = False
+
+        # Generate and save session summary before teardown
+        await self._save_session_summary()
+
         if self._audio:
             self._audio.stop()
         if self._session:
@@ -212,6 +226,10 @@ class EvaLive:
                 if hasattr(sc, 'model_turn') and sc.model_turn:
                     for part in sc.model_turn.parts:
                         if hasattr(part, 'text') and part.text:
+                            # Track for session summary
+                            self._conversation_log.append(f"EVA: {part.text}")
+                            if len(self._conversation_log) > 20:
+                                self._conversation_log = self._conversation_log[-20:]
                             self._emit_log(f"EVA: {part.text}", "assistant")
 
                 # Turn complete
@@ -312,7 +330,7 @@ class EvaLive:
     # ── Proactive Mode Task ─────────────────────────────────────
 
     async def _proactive_mode_task(self) -> None:
-        """Idle-triggered proactive engagement."""
+        """Idle-triggered proactive engagement with rotating focus."""
         if not config.get("proactive_mode", True):
             return
 
@@ -324,15 +342,25 @@ class EvaLive:
             await asyncio.sleep(10)
 
             if engine.is_idle and self._session and not self._is_speaking:
+                # Build rich context including recent conversation
                 context = engine.build_context()
+
+                # Append recent conversation turns (last 6-8)
+                if self._conversation_log:
+                    recent = self._conversation_log[-8:]
+                    context += "\n\n--- Recent Conversation ---\n"
+                    context += "\n".join(recent)
+
                 engine.mark_proactive_fired()
 
                 try:
                     prompt = (
-                        f"The user has been idle. Here's the current context:\n{context}\n\n"
+                        f"[PROACTIVE CHECK-IN]\n"
+                        f"The user has been idle. Here's the full context:\n\n"
+                        f"{context}\n\n"
                         f"Based on this context, decide whether to say something "
-                        f"brief and useful, or stay silent. If you speak, keep it "
-                        f"short and natural. Don't force conversation."
+                        f"brief and useful, or stay completely silent. "
+                        f"Do NOT call any tools."
                     )
                     await self._session.send_client_content(
                         turns=[types.Content(
@@ -389,17 +417,53 @@ class EvaLive:
             except Exception as e:
                 logger.warning(f"Phone audio relay error: {e}")
 
+    # ── Topic Monitor Task ──────────────────────────────────────
+
+    async def _topic_monitor_task(self) -> None:
+        """Periodically check monitored topics for new headlines."""
+        # Wait for session to fully initialize
+        await asyncio.sleep(60)
+
+        while self._running:
+            try:
+                from actions.topic_monitor import topic_monitor
+                alerts = await asyncio.get_running_loop().run_in_executor(
+                    None, topic_monitor.check_all_topics
+                )
+                if alerts and self._session:
+                    alert_text = "\n".join(alerts)
+                    self._emit_log(f"📡 Topic alerts: {len(alerts)}", "system")
+                    await self._session.send_client_content(
+                        turns=[types.Content(
+                            role="user",
+                            parts=[types.Part(
+                                text=(
+                                    f"Background monitor alerts:\n{alert_text}\n\n"
+                                    f"Briefly inform the user about these updates. "
+                                    f"Keep it concise — 1-2 sentences per alert."
+                                )
+                            )]
+                        )],
+                        turn_complete=True,
+                    )
+            except Exception as e:
+                logger.warning(f"Topic monitor error: {e}")
+
+            # Check every 30 minutes
+            await asyncio.sleep(1800)
+
     # ── Startup Briefing ────────────────────────────────────────
 
     async def _startup_briefing(self) -> None:
-        """Send a greeting after session stabilizes."""
-        # Wait for session to stabilize before greeting
+        """Send a greeting after session stabilizes, with previous session callback."""
         await asyncio.sleep(3)
 
         assistant_name = config.get("assistant_name", "EVA")
         user_name = config.get("user_name", "User")
 
-        # Send greeting
+        # Pop previous session summary (consume-once)
+        prev_session = session_memory.pop_latest()
+
         if self._session:
             greeting = (
                 f"Greet {user_name} warmly as {assistant_name}. "
@@ -408,6 +472,15 @@ class EvaLive:
             )
             if config.get("morning_briefing", True):
                 greeting += " If it's morning, offer a morning briefing."
+
+            if prev_session:
+                summary = prev_session.get('summary', '')
+                prev_date = prev_session.get('date', '')
+                greeting += (
+                    f"\n\nLast session ({prev_date}), you discussed: "
+                    f"{summary}. Reference it naturally if relevant — "
+                    f"a brief callback like 'Last time we talked about...'"
+                )
 
             try:
                 await self._session.send_client_content(
@@ -419,6 +492,39 @@ class EvaLive:
                 )
             except Exception as e:
                 logger.warning(f"Greeting failed: {e}")
+
+    # ── Session Summary ─────────────────────────────────────────
+
+    async def _save_session_summary(self) -> None:
+        """Generate a 1-2 sentence session summary and persist it."""
+        if not self._conversation_log:
+            return
+
+        try:
+            from core.llm_router import smart_generate
+
+            # Take last ~10 conversation turns
+            recent = self._conversation_log[-10:]
+            transcript = "\n".join(recent)
+
+            prompt = (
+                f"Summarize this conversation in 1-2 sentences (max 280 chars). "
+                f"Focus on what was discussed or accomplished. "
+                f"Write in the same language the conversation used.\n\n"
+                f"{transcript}"
+            )
+
+            result = await asyncio.get_running_loop().run_in_executor(
+                None, lambda: smart_generate(prompt)
+            )
+
+            if result and "unavailable" not in result.lower():
+                language = config.get("language", "en")
+                session_memory.append_session(result.strip(), language)
+                logger.info("Session summary saved")
+
+        except Exception as e:
+            logger.warning(f"Session summary generation failed: {e}")
 
     # ── External API ────────────────────────────────────────────
 
