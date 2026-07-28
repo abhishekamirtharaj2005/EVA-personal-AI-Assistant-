@@ -324,13 +324,22 @@ def close_application(name: str) -> str:
         if code == 0:
             return f"Closed: {name}"
 
-        # 2. FALLBACK: Use temp PowerShell script for wildcard match
-        #    (handles UWP/Store apps and partial name matches)
+        # 2. FALLBACK: PowerShell script that matches by process name
+        #    OR window title (catches UWP/Store apps)
         import tempfile
         script = (
+            f'# Try matching by process name first\n'
             f'$procs = Get-Process | Where-Object {{ $_.ProcessName -like "*{process_name}*" }}\n'
+            f'\n'
+            f'# If not found by name, try matching by window title\n'
+            f'if (-not $procs) {{\n'
+            f'  $procs = Get-Process | Where-Object {{\n'
+            f'    $_.MainWindowTitle -like "*{name}*"\n'
+            f'  }}\n'
+            f'}}\n'
+            f'\n'
             f'if ($procs) {{\n'
-            f'  $procs | Stop-Process -Force\n'
+            f'  $procs | Stop-Process -Force -ErrorAction SilentlyContinue\n'
             f'  Write-Output "CLOSED:$($procs.Count)"\n'
             f'}} else {{\n'
             f'  Write-Output "NOT_FOUND"\n'
@@ -354,6 +363,7 @@ def close_application(name: str) -> str:
                 pass
 
             output = result.stdout.strip()
+            logger.info(f"PowerShell close result: {output}")
             if output.startswith("CLOSED:"):
                 return f"Closed: {name}"
             elif output == "NOT_FOUND":
