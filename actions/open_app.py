@@ -278,3 +278,102 @@ def open_application(name: str) -> str:
         return f"Couldn't find application '{name}'."
 
     return "Unsupported platform."
+
+
+# ── Process name mapping for close ──────────────────────────────
+_PROCESS_NAMES = {
+    "chrome": "chrome", "google chrome": "chrome",
+    "firefox": "firefox", "brave": "brave",
+    "edge": "msedge", "microsoft edge": "msedge",
+    "notepad": "notepad", "calculator": "calculatorapp",
+    "paint": "mspaint", "explorer": "explorer",
+    "file explorer": "explorer", "cmd": "cmd",
+    "powershell": "powershell", "terminal": "windowsterminal",
+    "vscode": "code", "vs code": "code", "visual studio code": "code",
+    "spotify": "spotify", "discord": "discord",
+    "slack": "slack", "teams": "teams", "zoom": "zoom",
+    "telegram": "telegram", "whatsapp": "whatsapp",
+    "word": "winword", "excel": "excel",
+    "powerpoint": "powerpnt", "outlook": "outlook",
+    "vlc": "vlc", "obs": "obs64", "obs studio": "obs64",
+    "steam": "steam", "task manager": "taskmgr",
+    "settings": "systemsettings",
+    "instagram": "instagram",
+    "netflix": "netflix",
+}
+
+
+def _get_process_name(app_name: str) -> str:
+    """Map friendly app name to process name."""
+    name_lower = app_name.lower().strip()
+    return _PROCESS_NAMES.get(name_lower, name_lower)
+
+
+@register_tool(
+    name="close_application",
+    description="Close/kill a running application by name. Use when the user asks to close, quit, exit, or kill an app.",
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "name": {
+                "type": "STRING",
+                "description": "The application name to close (e.g., 'Chrome', 'Spotify', 'Instagram')",
+            },
+        },
+        "required": ["name"],
+    },
+    category="system",
+)
+def close_application(name: str) -> str:
+    """Close a running application by name."""
+    logger.info(f"Closing application: {name}")
+    process_name = _get_process_name(name)
+
+    if IS_WINDOWS:
+        # Try taskkill with image name (graceful first, then force)
+        # Try exact exe name
+        code, stdout, stderr = run_shell(
+            f'taskkill /IM "{process_name}.exe" /F', timeout=5
+        )
+        if code == 0:
+            return f"Closed: {name}"
+
+        # Try with wildcard — match partial process names
+        code, stdout, stderr = run_shell(
+            f'powershell -NoProfile -Command "'
+            f"Get-Process | Where-Object {{ $_.ProcessName -like '*{process_name}*' }} | "
+            f'Stop-Process -Force"',
+            timeout=8,
+        )
+        if code == 0:
+            return f"Closed: {name}"
+
+        # Check if the process was actually running
+        code2, stdout2, _ = run_shell(
+            f'tasklist /FI "IMAGENAME eq {process_name}.exe"', timeout=5
+        )
+        if process_name.lower() not in stdout2.lower():
+            return f"{name} doesn't appear to be running."
+
+        return f"Couldn't close {name}. It may require admin privileges."
+
+    elif IS_MACOS:
+        # Try osascript quit first (graceful)
+        code, _, _ = run_shell(
+            f'osascript -e \'tell application "{name}" to quit\'', timeout=5
+        )
+        if code == 0:
+            return f"Closed: {name}"
+        # Force kill
+        code, _, _ = run_shell(f'pkill -f "{process_name}"', timeout=5)
+        if code == 0:
+            return f"Force closed: {name}"
+        return f"Couldn't find running application '{name}'."
+
+    elif IS_LINUX:
+        code, _, _ = run_shell(f'pkill -f "{process_name}"', timeout=5)
+        if code == 0:
+            return f"Closed: {name}"
+        return f"Couldn't find running application '{name}'."
+
+    return "Unsupported platform."

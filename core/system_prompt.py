@@ -69,6 +69,7 @@ def build_system_prompt() -> str:
 | remember | User explicitly says "remember this" or you learn a persistent preference | Temporary information |
 | forget | User asks to forget something specific | Random memory cleanup |
 | monitor_topic | User asks to monitor/watch/track a topic for news updates | Crypto/finance topics (blocked) |
+| close_application | User asks to close, quit, exit, or kill an application | Shutting down EVA itself |
 
 # Addressing & Localization
 {f'- Detected language: {language}. Continue using this language unless the user switches.' if language else '- No language detected yet. Mirror the language the user speaks in. Once detected, store it in memory.'}
