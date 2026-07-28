@@ -197,16 +197,7 @@ def open_application(name: str) -> str:
     logger.info(f"Launching application: {name}")
 
     if IS_WINDOWS:
-        # 1. Check UWP protocol URIs first (Settings, Store, etc.)
-        protocol = _try_uwp_protocol(name)
-        if protocol:
-            try:
-                os.startfile(protocol)
-                return f"Launched: {name}"
-            except Exception as e:
-                logger.warning(f"UWP protocol launch failed: {e}")
-
-        # 2. Search Start Menu shortcuts + registry + common apps
+        # 1. ORIGINAL: Search Start Menu shortcuts + registry + common apps
         app_path = _find_app_windows(name)
         if app_path:
             try:
@@ -215,27 +206,23 @@ def open_application(name: str) -> str:
             except Exception as e:
                 logger.warning(f"Found {name} but startfile failed: {e}")
 
-        # 3. Try PowerShell Get-StartApps (catches all UWP/Store apps)
-        if _launch_via_powershell_search(name):
-            return f"Launched: {name}"
-
-        # 4. Fallback: try running directly via start command
+        # 2. ORIGINAL: Try running directly via start command
         code, _, stderr = run_shell(f'start "" "{name}"', timeout=5)
         if code == 0:
             return f"Launched: {name}"
 
-        # 5. Last resort: Win+S search simulation
-        try:
-            import pyautogui
-            import time
-            pyautogui.hotkey('win')
-            time.sleep(0.5)
-            pyautogui.typewrite(name, interval=0.03)
-            time.sleep(0.8)
-            pyautogui.press('enter')
-            return f"Searching and launching: {name}"
-        except Exception as e:
-            logger.warning(f"Win search fallback failed: {e}")
+        # 3. FALLBACK: Check UWP protocol URIs (Settings, Store, etc.)
+        protocol = _try_uwp_protocol(name)
+        if protocol:
+            try:
+                os.startfile(protocol)
+                return f"Launched: {name}"
+            except Exception as e:
+                logger.warning(f"UWP protocol launch failed: {e}")
+
+        # 4. FALLBACK: Try PowerShell Get-StartApps (catches Store apps)
+        if _launch_via_powershell_search(name):
+            return f"Launched: {name}"
 
         return f"Couldn't find application '{name}'. Try using the exact app name."
 
@@ -330,30 +317,49 @@ def close_application(name: str) -> str:
     process_name = _get_process_name(name)
 
     if IS_WINDOWS:
-        # Try taskkill with image name (graceful first, then force)
-        # Try exact exe name
+        # 1. ORIGINAL: Try taskkill with exact exe name
         code, stdout, stderr = run_shell(
             f'taskkill /IM "{process_name}.exe" /F', timeout=5
         )
         if code == 0:
             return f"Closed: {name}"
 
-        # Try with wildcard — match partial process names
-        code, stdout, stderr = run_shell(
-            f'powershell -NoProfile -Command "'
-            f"Get-Process | Where-Object {{ $_.ProcessName -like '*{process_name}*' }} | "
-            f'Stop-Process -Force"',
-            timeout=8,
+        # 2. FALLBACK: Use temp PowerShell script for wildcard match
+        #    (handles UWP/Store apps and partial name matches)
+        import tempfile
+        script = (
+            f'$procs = Get-Process | Where-Object {{ $_.ProcessName -like "*{process_name}*" }}\n'
+            f'if ($procs) {{\n'
+            f'  $procs | Stop-Process -Force\n'
+            f'  Write-Output "CLOSED:$($procs.Count)"\n'
+            f'}} else {{\n'
+            f'  Write-Output "NOT_FOUND"\n'
+            f'}}\n'
         )
-        if code == 0:
-            return f"Closed: {name}"
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode='w', suffix='.ps1', delete=False, dir=os.environ.get('TEMP')
+            ) as f:
+                f.write(script)
+                script_path = f.name
 
-        # Check if the process was actually running
-        code2, stdout2, _ = run_shell(
-            f'tasklist /FI "IMAGENAME eq {process_name}.exe"', timeout=5
-        )
-        if process_name.lower() not in stdout2.lower():
-            return f"{name} doesn't appear to be running."
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                 "-File", script_path],
+                capture_output=True, text=True, timeout=10,
+            )
+            try:
+                os.unlink(script_path)
+            except OSError:
+                pass
+
+            output = result.stdout.strip()
+            if output.startswith("CLOSED:"):
+                return f"Closed: {name}"
+            elif output == "NOT_FOUND":
+                return f"{name} doesn't appear to be running."
+        except Exception as e:
+            logger.warning(f"PowerShell close failed: {e}")
 
         return f"Couldn't close {name}. It may require admin privileges."
 
