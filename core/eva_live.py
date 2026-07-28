@@ -465,9 +465,13 @@ class EvaLive:
         prev_session = session_memory.pop_latest()
 
         if self._session:
+            from datetime import datetime, timezone, timedelta
+            ist = timezone(timedelta(hours=5, minutes=30))
+            time_str = datetime.now(ist).strftime('%I:%M %p')
+
             greeting = (
                 f"Greet {user_name} warmly as {assistant_name}. "
-                f"Mention the current time and offer to help. "
+                f"The current time is {time_str} IST. Mention the time naturally. "
                 f"Keep it brief and natural — 2-3 sentences max."
             )
             if config.get("morning_briefing", True):

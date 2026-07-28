@@ -6,7 +6,7 @@ rich context snapshot with memory/topics/conversation.
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Callable
 
 from core.tool_dispatcher import register_tool
@@ -101,7 +101,7 @@ class ProactiveEngine:
         Assemble a rich context snapshot for the model to decide
         whether to initiate conversation.
         """
-        now = datetime.now()
+        now = datetime.now(timezone(timedelta(hours=5, minutes=30)))
         hour = now.hour
         period = _get_period_label(hour)
 

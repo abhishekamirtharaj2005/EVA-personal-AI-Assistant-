@@ -4,8 +4,13 @@ Constructs the full system prompt with identity, execution rules,
 tool routing table, and injected memory/config at session start.
 """
 
+from datetime import datetime, timezone, timedelta
+
 from memory.config_manager import config
 from memory.memory_manager import memory
+
+# Indian Standard Time (UTC+05:30)
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 def build_system_prompt() -> str:
@@ -73,6 +78,8 @@ def build_system_prompt() -> str:
 {memory_block}
 
 # Current Time Context
+- The current date and time is: {datetime.now(IST).strftime('%I:%M %p, %A, %B %d, %Y')} (Indian Standard Time / IST).
+- Always use Indian Standard Time (IST, UTC+05:30) for all time references.
 - You are running on {user_name}'s computer right now. This is a live conversation.
 - Be aware of the current time and date for contextual responses (reminders, greetings, etc.).
 """
