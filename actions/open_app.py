@@ -267,44 +267,15 @@ def open_application(name: str) -> str:
     return "Unsupported platform."
 
 
-# ── Process name mapping for close ──────────────────────────────
-_PROCESS_NAMES = {
-    "chrome": "chrome", "google chrome": "chrome",
-    "firefox": "firefox", "brave": "brave",
-    "edge": "msedge", "microsoft edge": "msedge",
-    "notepad": "notepad", "calculator": "calculatorapp",
-    "paint": "mspaint", "explorer": "explorer",
-    "file explorer": "explorer", "cmd": "cmd",
-    "powershell": "powershell", "terminal": "windowsterminal",
-    "vscode": "code", "vs code": "code", "visual studio code": "code",
-    "spotify": "spotify", "discord": "discord",
-    "slack": "slack", "teams": "teams", "zoom": "zoom",
-    "telegram": "telegram", "whatsapp": "whatsapp",
-    "word": "winword", "excel": "excel",
-    "powerpoint": "powerpnt", "outlook": "outlook",
-    "vlc": "vlc", "obs": "obs64", "obs studio": "obs64",
-    "steam": "steam", "task manager": "taskmgr",
-    "settings": "systemsettings",
-    "instagram": "instagram",
-    "netflix": "netflix",
-}
-
-
-def _get_process_name(app_name: str) -> str:
-    """Map friendly app name to process name."""
-    name_lower = app_name.lower().strip()
-    return _PROCESS_NAMES.get(name_lower, name_lower)
-
-
 @register_tool(
     name="close_application",
-    description="Close/kill a running application by name. Use when the user asks to close, quit, exit, or kill an app.",
+    description="Close/kill any running application by name. Use when the user asks to close, quit, exit, or kill an app.",
     parameters={
         "type": "OBJECT",
         "properties": {
             "name": {
                 "type": "STRING",
-                "description": "The application name to close (e.g., 'Chrome', 'Spotify', 'Instagram')",
+                "description": "The application name to close (e.g., 'Chrome', 'Spotify', 'Instagram', 'Notepad')",
             },
         },
         "required": ["name"],
@@ -312,35 +283,46 @@ def _get_process_name(app_name: str) -> str:
     category="system",
 )
 def close_application(name: str) -> str:
-    """Close a running application by name."""
+    """Close any running application by name. Works generically for all apps."""
     logger.info(f"Closing application: {name}")
-    process_name = _get_process_name(name)
+    name_lower = name.lower().strip()
 
     if IS_WINDOWS:
-        # 1. ORIGINAL: Try taskkill with exact exe name
-        code, stdout, stderr = run_shell(
-            f'taskkill /IM "{process_name}.exe" /F', timeout=5
-        )
-        if code == 0:
-            return f"Closed: {name}"
+        # 1. Try taskkill with common exe patterns
+        #    Try the name directly, with .exe, and without spaces
+        candidates = [
+            f"{name_lower}.exe",
+            f"{name_lower.replace(' ', '')}.exe",
+        ]
+        for candidate in candidates:
+            code, _, _ = run_shell(f'taskkill /IM "{candidate}" /F', timeout=5)
+            if code == 0:
+                return f"Closed: {name}"
 
-        # 2. FALLBACK: PowerShell script that matches by process name
-        #    OR window title (catches UWP/Store apps)
+        # 2. Generic PowerShell: search ALL processes by name AND window title
         import tempfile
         script = (
-            f'# Try matching by process name first\n'
-            f'$procs = Get-Process | Where-Object {{ $_.ProcessName -like "*{process_name}*" }}\n'
+            f'$name = "{name}"\n'
+            f'$nameLower = $name.ToLower()\n'
             f'\n'
-            f'# If not found by name, try matching by window title\n'
+            f'# Search by process name (partial match)\n'
+            f'$procs = Get-Process | Where-Object {{\n'
+            f'  $_.ProcessName.ToLower().Contains($nameLower) -or\n'
+            f'  $_.ProcessName.ToLower().Contains($nameLower.Replace(" ", ""))\n'
+            f'}}\n'
+            f'\n'
+            f'# If not found, search by window title\n'
             f'if (-not $procs) {{\n'
             f'  $procs = Get-Process | Where-Object {{\n'
-            f'    $_.MainWindowTitle -like "*{name}*"\n'
+            f'    $_.MainWindowTitle -and\n'
+            f'    $_.MainWindowTitle.ToLower().Contains($nameLower)\n'
             f'  }}\n'
             f'}}\n'
             f'\n'
             f'if ($procs) {{\n'
+            f'  $names = ($procs | Select-Object -ExpandProperty ProcessName -Unique) -join ", "\n'
             f'  $procs | Stop-Process -Force -ErrorAction SilentlyContinue\n'
-            f'  Write-Output "CLOSED:$($procs.Count)"\n'
+            f'  Write-Output "CLOSED:$names"\n'
             f'}} else {{\n'
             f'  Write-Output "NOT_FOUND"\n'
             f'}}\n'
@@ -363,15 +345,16 @@ def close_application(name: str) -> str:
                 pass
 
             output = result.stdout.strip()
-            logger.info(f"PowerShell close result: {output}")
+            logger.info(f"Close result: {output}")
             if output.startswith("CLOSED:"):
-                return f"Closed: {name}"
+                closed_names = output.split(":", 1)[1]
+                return f"Closed: {name} (processes: {closed_names})"
             elif output == "NOT_FOUND":
                 return f"{name} doesn't appear to be running."
         except Exception as e:
             logger.warning(f"PowerShell close failed: {e}")
 
-        return f"Couldn't close {name}. It may require admin privileges."
+        return f"Couldn't close {name}. It may not be running or requires admin privileges."
 
     elif IS_MACOS:
         # Try osascript quit first (graceful)
