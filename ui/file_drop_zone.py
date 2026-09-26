@@ -1,26 +1,44 @@
 """
-EVA File Drop Zone — Drag-and-drop target wired to file processing.
+EVA File Drop Zone — Drag-and-drop target with animated dashed border,
+glow-on-hover, and neon pulse effect.
 """
 
+import math
 from pathlib import Path
 
 from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout
-from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QDragEnterEvent, QDropEvent
-from PyQt6.QtCore import Qt, QRectF, pyqtSignal
+from PyQt6.QtGui import (
+    QPainter, QColor, QPen, QBrush, QDragEnterEvent, QDropEvent,
+    QLinearGradient,
+)
+from PyQt6.QtCore import Qt, QRectF, QTimer, pyqtSignal
 
 from ui.styles import theme
 
 
 class FileDropZone(QWidget):
-    """Drag-and-drop file target that emits file paths for processing."""
+    """Drag-and-drop file target with animated neon border."""
 
     file_dropped = pyqtSignal(str)  # Emitted with the dropped file path
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
-        self.setFixedHeight(80)
+        self.setFixedHeight(75)
         self._hovering = False
+        self._dash_offset = 0.0
+        self._pulse_phase = 0.0
+
+        # Animate the dashed border
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(50)
+
+    def _tick(self):
+        self._dash_offset += 0.8
+        self._pulse_phase += 0.1
+        if self._hovering:
+            self.update()
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if event.mimeData().hasUrls():
@@ -46,30 +64,46 @@ class FileDropZone(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         w, h = self.width(), self.height()
-        rect = QRectF(4, 4, w - 8, h - 8)
+        rect = QRectF(6, 4, w - 12, h - 8)
 
-        # Background
-        bg = theme.accent_bg if self._hovering else theme.bg_tertiary
+        # Background with hover glow
+        if self._hovering:
+            pulse = 0.5 + 0.5 * math.sin(self._pulse_phase * 2)
+            glow_alpha = int(15 + 15 * pulse)
+            bg = QColor(theme.accent.red(), theme.accent.green(),
+                       theme.accent.blue(), glow_alpha)
+        else:
+            bg = theme.bg_tertiary
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(bg))
-        painter.drawRoundedRect(rect, 12, 12)
+        painter.drawRoundedRect(rect, 10, 10)
 
-        # Dashed border
+        # Animated dashed border
         border_color = theme.accent if self._hovering else theme.border_color
-        pen = QPen(border_color, 2, Qt.PenStyle.DashLine)
+        if self._hovering:
+            alpha = int(150 + 105 * math.sin(self._pulse_phase * 2))
+            border_color = QColor(theme.accent.red(), theme.accent.green(),
+                                 theme.accent.blue(), alpha)
+
+        pen = QPen(border_color, 1.5, Qt.PenStyle.DashLine)
+        pen.setDashOffset(self._dash_offset)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(rect, 12, 12)
+        painter.drawRoundedRect(rect, 10, 10)
 
         # Icon and text
-        painter.setFont(theme.font(size=20))
-        painter.setPen(theme.accent if self._hovering else theme.text_dim)
-        icon_rect = QRectF(0, 8, w, 35)
-        painter.drawText(icon_rect, Qt.AlignmentFlag.AlignCenter, "📁")
+        text_color = theme.accent if self._hovering else theme.text_dim
+        painter.setPen(text_color)
 
-        painter.setFont(theme.font(size=9))
-        text = "Drop files here to analyze" if not self._hovering else "Release to process..."
-        text_rect = QRectF(0, 40, w, 25)
+        painter.setFont(theme.font(size=18))
+        icon_rect = QRectF(0, 6, w, 30)
+        icon = "⬇" if self._hovering else "📁"
+        painter.drawText(icon_rect, Qt.AlignmentFlag.AlignCenter, icon)
+
+        painter.setFont(theme.font_hud(9))
+        text = ("Release to process..." if self._hovering
+                else "Drop files here to analyze")
+        text_rect = QRectF(0, 38, w, 22)
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, text)
 
         painter.end()

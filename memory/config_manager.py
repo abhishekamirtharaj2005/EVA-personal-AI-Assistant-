@@ -15,7 +15,8 @@ _SETTINGS_FILE = _CONFIG_DIR / "settings.json"
 _DEFAULTS = {
     # ── API Keys ──────────────────────────────────────────
     "api_key": "",               # Gemini API key (primary)
-    "openai_api_key": "",        # OpenAI API key
+    "gemini_api_key": "",        # Alias for api_key (used by new modules)
+    "openai_api_key": "",        # OpenAI API key (DALL-E image gen)
     "anthropic_api_key": "",     # Anthropic API key
 
     # ── Identity ──────────────────────────────────────────
@@ -23,7 +24,7 @@ _DEFAULTS = {
     "user_name": "User",
 
     # ── Model & Voice ─────────────────────────────────────
-    "preferred_model": "gemini-3.1-flash-live-preview",
+    "preferred_model": "gemini-3.8-flash",
     "voice_name": "Aoede",       # Aoede, Charon, Fenrir, Kore, Puck
     "tts_enabled": True,
 
@@ -51,6 +52,17 @@ _DEFAULTS = {
     "ollama_model": "",             # Auto-detect if blank
     "ollama_vision_model": "",      # Auto-detect if blank
 
+    # ── Email Integration ─────────────────────────────────
+    "email_address": "",            # your.email@gmail.com
+    "email_app_password": "",       # Gmail App Password (NOT normal password)
+
+    # ── Telegram Bot ──────────────────────────────────────
+    "telegram_bot_token": "",       # From @BotFather on Telegram
+
+    # ── Smart Home (Home Assistant) ───────────────────────
+    "home_assistant_url": "",       # http://homeassistant.local:8123
+    "home_assistant_token": "",     # Long-lived access token
+
     # ── Misc ──────────────────────────────────────────────
     "clipboard_min_chars": 10,
     "dashboard_port": 8765,
@@ -58,7 +70,9 @@ _DEFAULTS = {
     "first_run": True,
     "language": "",
     "city": "",
+    "mic_device": "",               # Mic device index or name (blank = auto-detect)
 }
+
 
 
 class ConfigManager:

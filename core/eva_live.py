@@ -113,53 +113,75 @@ class EvaLive:
             ),
         )
 
-        # Connect to Gemini Live
-        model = config.get("preferred_model", "gemini-3.1-flash-live-preview")
-        logger.info(f"Connecting to Gemini Live ({model})...")
-        self._emit_log("Connecting to Gemini Live...", "system")
+        # Connect to Gemini Live (with auto-reconnect)
+        model = config.get("preferred_model", "gemini-3.8-flash")
+        max_retries = 10
+        retry_delay = 5  # seconds, grows exponentially
 
-        try:
-            async with self._client.aio.live.connect(
-                model=model, config=session_config
-            ) as session:
-                self._session = session
-                logger.info("Gemini Live session established")
-                self._emit_log("Connected! EVA is ready.", "system")
-                self._emit_state("idle")
+        for attempt in range(1, max_retries + 1):
+            if not self._running:
+                break
 
-                # Start audio streams
-                self._audio.start_input()
-                self._audio.start_output()
+            logger.info(f"Connecting to Gemini Live ({model})... (attempt {attempt})")
+            self._emit_log(
+                f"Connecting to Gemini Live...{f' (retry {attempt})' if attempt > 1 else ''}",
+                "system",
+            )
 
-                # Launch all concurrent tasks
-                tasks = [
-                    asyncio.create_task(self._send_audio_task(), name="send_audio"),
-                    asyncio.create_task(self._receive_task(), name="receive"),
-                    asyncio.create_task(self._play_audio_task(), name="play_audio"),
-                    asyncio.create_task(self._system_monitor_task(), name="sys_monitor"),
-                    asyncio.create_task(self._proactive_mode_task(), name="proactive"),
-                    asyncio.create_task(self._dashboard_command_task(), name="dashboard_cmd"),
-                    asyncio.create_task(self._relay_phone_audio_task(), name="phone_audio"),
-                    asyncio.create_task(self._topic_monitor_task(), name="topic_monitor"),
-                ]
+            try:
+                async with self._client.aio.live.connect(
+                    model=model, config=session_config
+                ) as session:
+                    self._session = session
+                    logger.info("Gemini Live session established")
+                    self._emit_log("Connected! EVA is ready.", "system")
+                    self._emit_state("idle")
 
-                # Send startup briefing
-                asyncio.create_task(self._startup_briefing())
+                    # Reset retry delay on successful connection
+                    retry_delay = 5
 
-                try:
-                    await asyncio.gather(*tasks)
-                except asyncio.CancelledError:
-                    logger.info("Tasks cancelled, shutting down")
-                except Exception as e:
-                    logger.exception(f"Task error: {e}")
-                finally:
-                    self._running = False
-                    self._audio.stop()
+                    # Start audio streams
+                    self._audio.start_input()
+                    self._audio.start_output()
 
-        except Exception as e:
-            logger.error(f"Failed to connect: {e}")
-            self._emit_log(f"Connection failed: {e}", "error")
-            return
+                    # Launch all concurrent tasks
+                    tasks = [
+                        asyncio.create_task(self._send_audio_task(), name="send_audio"),
+                        asyncio.create_task(self._receive_task(), name="receive"),
+                        asyncio.create_task(self._play_audio_task(), name="play_audio"),
+                        asyncio.create_task(self._system_monitor_task(), name="sys_monitor"),
+                        asyncio.create_task(self._proactive_mode_task(), name="proactive"),
+                        asyncio.create_task(self._dashboard_command_task(), name="dashboard_cmd"),
+                        asyncio.create_task(self._relay_phone_audio_task(), name="phone_audio"),
+                        asyncio.create_task(self._topic_monitor_task(), name="topic_monitor"),
+                    ]
+
+                    # Send startup briefing
+                    asyncio.create_task(self._startup_briefing())
+
+                    try:
+                        await asyncio.gather(*tasks)
+                    except asyncio.CancelledError:
+                        logger.info("Tasks cancelled, shutting down")
+                    except Exception as e:
+                        logger.exception(f"Task error: {e}")
+                    finally:
+                        self._running = False
+                        self._audio.stop()
+                    return  # Clean exit
+
+            except Exception as e:
+                logger.error(f"Connection attempt {attempt} failed: {e}")
+                self._emit_log(f"Connection failed (attempt {attempt}): {e}", "error")
+
+                if attempt < max_retries and self._running:
+                    self._emit_log(f"Retrying in {retry_delay}s...", "system")
+                    self._emit_state("idle")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, 30)  # Exponential backoff, max 30s
+                else:
+                    self._emit_log("All connection attempts failed. Check your network.", "error")
+                    return
 
     async def stop(self) -> None:
         """Stop all tasks, save session summary, and close."""

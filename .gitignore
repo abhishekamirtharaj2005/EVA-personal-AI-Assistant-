@@ -11,6 +11,18 @@ venv/
 .venv/
 env/
 .env/
+ENV/
+env.bak/
+venv.bak/
+
+# ─── Environment & Secrets ────────────────────────────────
+.env
+.env.*
+*.env
+*.secret
+credentials.json
+token.json
+tokens.json
 
 # ─── IDE / Editor ─────────────────────────────────────────
 .vscode/
@@ -34,15 +46,23 @@ build/
 *.egg
 *.whl
 
-# ─── EVA Config (contains API keys & user data) ──────────
-config/settings.json
-config/memory.json
-config/sessions.json
-config/monitors.json
+# ─── EVA Runtime Config & Sensitive Data ──────────────────
+# Ignore all json files in config except the example template
+config/*.json
+!config/settings.example.json
+
+# Encrypted credentials/vaults
+config/*.enc
+*.enc
+
+# Runtime directories
 config/certs/
 config/logs/
 config/reminders/
 config/uploads/
+config/recordings/
+config/generated_images/
+config/screenshots/
 
 # ─── SSL Certificates ────────────────────────────────────
 *.pem
@@ -50,20 +70,31 @@ config/uploads/
 *.crt
 *.csr
 
+# ─── Generated Media ──────────────────────────────────────
+recordings/
+*.mp4
+*.mkv
+*.avi
+*.webm
+
 # ─── Compiled Qt Resources ───────────────────────────────
 *.qrc
 moc_*.cpp
 ui_*.h
 
-# ─── Playwright ───────────────────────────────────────────
+# ─── Playwright & Browser Automation ──────────────────────
 playwright-report/
 test-results/
+.playwright/
+
+# ─── Testing & Coverage ───────────────────────────────────
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
 
 # ─── Misc ─────────────────────────────────────────────────
 *.log
 *.tmp
 *.bak
 *.orig
-.pytest_cache/
-htmlcov/
-.coverage

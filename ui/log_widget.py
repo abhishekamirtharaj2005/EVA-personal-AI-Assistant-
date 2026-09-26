@@ -1,21 +1,23 @@
 """
 EVA Log Widget — Cyberpunk terminal-style scrolling log.
-Monospace font, neon color coding, HUD-style prefixes.
+Monospace font, neon color coding, HUD-style prefixes,
+fade-in animation, and glow highlights.
 """
 
 import time
+import math
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QScrollArea, QLabel, QFrame,
 )
-from PyQt6.QtGui import QColor, QPainter, QPen, QFont
+from PyQt6.QtGui import QColor, QPainter, QPen, QFont, QLinearGradient
 from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 
 from ui.styles import theme
 
 
 class LogEntry(QLabel):
-    """Single log entry with cyberpunk styling."""
+    """Single log entry with cyberpunk styling and source glow."""
 
     def __init__(self, text: str, source: str, color: QColor = None, parent=None):
         super().__init__(parent)
@@ -31,7 +33,15 @@ class LogEntry(QLabel):
             "tool": "[MOD]",
             "error": "[ERR]",
         }
+        icon_map = {
+            "user": "▸",
+            "assistant": "◈",
+            "system": "●",
+            "tool": "⚙",
+            "error": "✖",
+        }
         prefix = prefix_map.get(source, "[---]")
+        icon = icon_map.get(source, "·")
         timestamp = time.strftime("%H:%M:%S")
 
         # Color mapping
@@ -44,24 +54,30 @@ class LogEntry(QLabel):
         }
         c = color or color_map.get(source, theme.text_secondary)
 
-        self.setText(f"{timestamp} {prefix} {text}")
+        self.setText(f"{timestamp} {prefix} {icon} {text}")
+
+        # Glow border on left side based on source type
+        glow_alpha = 100 if source in ("error", "user", "assistant") else 50
         self.setStyleSheet(f"""
             QLabel {{
                 color: {c.name()};
-                background: transparent;
-                padding: 3px 8px;
-                border-left: 2px solid rgba({c.red()}, {c.green()}, {c.blue()}, 80);
+                background: rgba({c.red()}, {c.green()}, {c.blue()}, 8);
+                padding: 4px 10px;
+                border-left: 3px solid rgba({c.red()}, {c.green()}, {c.blue()}, {glow_alpha});
+                border-radius: 2px;
+                margin: 1px 4px;
             }}
         """)
         self.setContentsMargins(0, 1, 0, 1)
 
 
 class LogWidget(QWidget):
-    """Scrolling cyberpunk terminal log."""
+    """Scrolling cyberpunk terminal log with glow header."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._max_entries = 200
+        self._pulse_phase = 0.0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -70,13 +86,13 @@ class LogWidget(QWidget):
         # Header bar
         header = QLabel("  ◈ ACTIVITY LOG")
         header.setFont(theme.font_hud(9))
-        header.setFixedHeight(24)
+        header.setFixedHeight(26)
         header.setStyleSheet(f"""
             QLabel {{
                 color: {theme.accent_dim.name()};
                 background-color: {theme.bg_secondary.name()};
                 border-bottom: 1px solid {theme.border_color.name()};
-                padding-left: 6px;
+                padding-left: 8px;
                 letter-spacing: 2px;
             }}
         """)
@@ -91,17 +107,17 @@ class LogWidget(QWidget):
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._scroll.setStyleSheet(f"""
             QScrollArea {{
-                background-color: rgba(3, 2, 10, 200);
+                background-color: rgba(3, 2, 10, 220);
                 border: 1px solid {theme.border_color.name()};
-                border-radius: 4px;
+                border-radius: 6px;
             }}
         """)
 
         # Container for entries
         self._container = QWidget()
         self._entries_layout = QVBoxLayout(self._container)
-        self._entries_layout.setContentsMargins(4, 4, 4, 4)
-        self._entries_layout.setSpacing(1)
+        self._entries_layout.setContentsMargins(4, 6, 4, 6)
+        self._entries_layout.setSpacing(2)
         self._entries_layout.addStretch()
 
         self._scroll.setWidget(self._container)
@@ -144,6 +160,6 @@ class LogWidget(QWidget):
         # Draw subtle scanline effect over the log
         painter = QPainter(self)
         for y in range(0, self.height(), 3):
-            painter.fillRect(0, y, self.width(), 1, QColor(0, 0, 0, 8))
+            painter.fillRect(0, y, self.width(), 1, QColor(0, 0, 0, 6))
         painter.end()
         super().paintEvent(event)

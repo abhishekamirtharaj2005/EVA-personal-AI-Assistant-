@@ -1,16 +1,22 @@
 """
 EVA Main Window — Cyberpunk-styled composition of all UI widgets.
-Neon header, glowing input bar, HUD-style layout.
+Neon header with glowing divider, animated input bar, HUD-style layout,
+and reactive state indicators.
 """
 
+import math
 import threading
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLineEdit, QLabel, QApplication, QFrame,
+    QGraphicsDropShadowEffect,
 )
-from PyQt6.QtGui import QIcon, QColor, QPainter, QPen
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import (
+    QIcon, QColor, QPainter, QPen, QLinearGradient,
+    QBrush, QRadialGradient,
+)
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot, QRectF, QPointF
 
 from ui.styles import theme
 from ui.hud_canvas import HudCanvas
@@ -23,6 +29,63 @@ from ui.customize_overlay import SettingsPanel
 from ui.clipboard_panel import ClipboardPanel
 from ui.remote_key_overlay import RemoteKeyOverlay
 from memory.config_manager import config
+
+
+class NeonDivider(QWidget):
+    """Animated neon horizontal line divider."""
+
+    def __init__(self, color: QColor = None, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(2)
+        self._color = color or theme.accent
+        self._phase = 0.0
+
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(50)
+
+    def _tick(self):
+        self._phase += 0.08
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        w = self.width()
+
+        # Animated gradient sweep
+        sweep_pos = (math.sin(self._phase) + 1) / 2  # 0 to 1
+        grad = QLinearGradient(0, 0, w, 0)
+
+        c = self._color
+        dim = QColor(c.red(), c.green(), c.blue(), 30)
+        bright = QColor(c.red(), c.green(), c.blue(), 200)
+
+        grad.setColorAt(0.0, dim)
+        grad.setColorAt(max(0, sweep_pos - 0.15), dim)
+        grad.setColorAt(sweep_pos, bright)
+        grad.setColorAt(min(1, sweep_pos + 0.15), dim)
+        grad.setColorAt(1.0, dim)
+
+        painter.fillRect(0, 0, w, 2, grad)
+        painter.end()
+
+
+class PulseButton(QPushButton):
+    """Button with subtle pulse glow animation on hover."""
+
+    def __init__(self, text: str, parent=None):
+        super().__init__(text, parent)
+        self._pulse_phase = 0.0
+        self._hovered = False
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def enterEvent(self, event):
+        self._hovered = True
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        super().leaveEvent(event)
 
 
 class MainWindow(QMainWindow):
@@ -47,7 +110,7 @@ class MainWindow(QMainWindow):
             f"{config.get('assistant_name', 'EVA')} — Enhanced Virtual Assistant"
         )
         self.setMinimumSize(500, 750)
-        self.resize(520, 850)
+        self.resize(520, 880)
 
         # Apply base stylesheet
         self.setStyleSheet(theme.stylesheet_base())
@@ -61,15 +124,14 @@ class MainWindow(QMainWindow):
 
         # ── Neon Top Bar ────────────────────────────────────
         top_bar = QWidget()
-        top_bar.setFixedHeight(52)
+        top_bar.setFixedHeight(56)
         top_bar.setStyleSheet(f"""
             background-color: {theme.bg_secondary.name()};
-            border-bottom: 1px solid {theme.accent_dim.name()};
         """)
         header = QHBoxLayout(top_bar)
         header.setContentsMargins(16, 0, 16, 0)
 
-        # Title
+        # Title with glow effect
         self._title_label = QLabel(config.get("assistant_name", "EVA"))
         self._title_label.setFont(theme.font_title())
         self._title_label.setStyleSheet(f"""
@@ -78,7 +140,7 @@ class MainWindow(QMainWindow):
         """)
         header.addWidget(self._title_label)
 
-        # Status indicator
+        # Status indicator (animated)
         self._status_dot = QLabel("●")
         self._status_dot.setFont(theme.font(8))
         self._status_dot.setStyleSheet(f"color: {theme.success.name()};")
@@ -88,27 +150,35 @@ class MainWindow(QMainWindow):
 
         # Settings button
         self._settings_btn = QPushButton("⚙")
-        self._settings_btn.setFixedSize(36, 36)
+        self._settings_btn.setFixedSize(40, 40)
         self._settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._settings_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; border: none;
-                font-size: 20px; color: {theme.text_dim.name()};
+                font-size: 22px; color: {theme.text_dim.name()};
+                border-radius: 20px;
             }}
-            QPushButton:hover {{ color: {theme.accent.name()}; }}
+            QPushButton:hover {{
+                color: {theme.accent.name()};
+                background: rgba({theme.accent.red()}, {theme.accent.green()}, {theme.accent.blue()}, 20);
+            }}
         """)
         self._settings_btn.clicked.connect(self._show_settings)
         header.addWidget(self._settings_btn)
 
         # Remote button
         self._remote_btn = QPushButton("📱")
-        self._remote_btn.setFixedSize(36, 36)
+        self._remote_btn.setFixedSize(40, 40)
         self._remote_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._remote_btn.setStyleSheet(self._settings_btn.styleSheet())
         self._remote_btn.clicked.connect(self._show_remote)
         header.addWidget(self._remote_btn)
 
         main_layout.addWidget(top_bar)
+
+        # ── Animated neon divider ───────────────────────────
+        self._top_divider = NeonDivider()
+        main_layout.addWidget(self._top_divider)
 
         # ── Content area ────────────────────────────────────
         content = QWidget()
@@ -141,33 +211,52 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(content, stretch=1)
 
+        # ── Bottom divider ──────────────────────────────────
+        self._bottom_divider = NeonDivider()
+        main_layout.addWidget(self._bottom_divider)
+
         # ── Input Bar ───────────────────────────────────────
         input_container = QWidget()
-        input_container.setFixedHeight(56)
+        input_container.setFixedHeight(60)
         input_container.setStyleSheet(f"""
             background-color: {theme.bg_secondary.name()};
-            border-top: 1px solid {theme.border_color.name()};
         """)
         input_layout = QHBoxLayout(input_container)
-        input_layout.setContentsMargins(12, 8, 12, 8)
-        input_layout.setSpacing(8)
+        input_layout.setContentsMargins(14, 10, 14, 10)
+        input_layout.setSpacing(10)
 
-        # Prompt symbol
-        prompt = QLabel("›")
-        prompt.setFont(theme.font(size=18, bold=True))
-        prompt.setStyleSheet(f"color: {theme.accent.name()};")
-        prompt.setFixedWidth(16)
-        input_layout.addWidget(prompt)
+        # Prompt symbol (animated via state)
+        self._prompt_label = QLabel("›")
+        self._prompt_label.setFont(theme.font(size=20, bold=True))
+        self._prompt_label.setStyleSheet(f"color: {theme.accent.name()};")
+        self._prompt_label.setFixedWidth(18)
+        input_layout.addWidget(self._prompt_label)
 
         self._text_input = QLineEdit()
         self._text_input.setPlaceholderText("Enter command...")
-        self._text_input.setFixedHeight(36)
+        self._text_input.setFixedHeight(38)
+        self._text_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: rgba({theme.bg_input.red()}, {theme.bg_input.green()}, {theme.bg_input.blue()}, 180);
+                color: {theme.accent_bright.name()};
+                border: 1px solid {theme.border_color.name()};
+                border-radius: 6px;
+                padding: 8px 14px;
+                font-family: "{theme.font_mono}";
+                font-size: 12px;
+                selection-background-color: {theme.accent_dim.name()};
+            }}
+            QLineEdit:focus {{
+                border-color: {theme.accent.name()};
+                background-color: rgba(15, 12, 38, 220);
+            }}
+        """)
         self._text_input.returnPressed.connect(self._on_text_submit)
         input_layout.addWidget(self._text_input)
 
         # Interrupt / Stop button
         self._interrupt_btn = QPushButton("■")
-        self._interrupt_btn.setFixedSize(36, 36)
+        self._interrupt_btn.setFixedSize(38, 38)
         self._interrupt_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._interrupt_btn.setToolTip("Interrupt (stop speaking)")
         self._interrupt_btn.setStyleSheet(f"""
@@ -175,12 +264,16 @@ class MainWindow(QMainWindow):
                 background-color: transparent;
                 color: {theme.error.name()};
                 border: 1px solid {theme.error.name()};
-                border-radius: 4px;
+                border-radius: 6px;
                 font-size: 14px;
             }}
             QPushButton:hover {{
-                background-color: rgba(255, 40, 80, 30);
+                background-color: rgba(255, 40, 80, 40);
                 color: white;
+                border-color: #ff4060;
+            }}
+            QPushButton:pressed {{
+                background-color: rgba(255, 40, 80, 80);
             }}
         """)
         self._interrupt_btn.clicked.connect(self.interrupt_signal.emit)
@@ -210,6 +303,12 @@ class MainWindow(QMainWindow):
             config.get("system_monitor_interval", 30) * 1000
         )
         QTimer.singleShot(1000, self._poll_metrics)
+
+        # ── Prompt blink timer ──────────────────────────────
+        self._prompt_phase = 0.0
+        self._prompt_timer = QTimer(self)
+        self._prompt_timer.timeout.connect(self._animate_prompt)
+        self._prompt_timer.start(500)
 
     # ── Public methods for external thread-safe updates ─────
 
@@ -246,6 +345,15 @@ class MainWindow(QMainWindow):
         }
         c = color_map.get(state, theme.text_dim)
         self._status_dot.setStyleSheet(f"color: {c.name()};")
+
+        # Update prompt symbol based on state
+        prompt_map = {
+            "idle": "›",
+            "listening": "◉",
+            "speaking": "◈",
+            "thinking": "⟳",
+        }
+        self._prompt_label.setText(prompt_map.get(state, "›"))
 
     @pyqtSlot(str, str)
     def _on_add_log(self, text: str, source: str) -> None:
@@ -308,6 +416,15 @@ class MainWindow(QMainWindow):
             letter-spacing: 4px;
         """)
         self.update()
+
+    def _animate_prompt(self) -> None:
+        """Blink the prompt symbol."""
+        self._prompt_phase += 1
+        alpha = 255 if int(self._prompt_phase) % 2 == 0 else 140
+        self._prompt_label.setStyleSheet(
+            f"color: rgba({theme.accent.red()}, {theme.accent.green()}, "
+            f"{theme.accent.blue()}, {alpha});"
+        )
 
     def _poll_metrics(self) -> None:
         """Poll system metrics in a background thread."""

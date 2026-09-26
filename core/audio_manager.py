@@ -58,7 +58,7 @@ class AudioManager:
     # ── Lifecycle ───────────────────────────────────────────────
 
     def start_input(self) -> None:
-        """Start microphone capture."""
+        """Start microphone capture with smart device selection."""
         if self._input_stream is not None:
             return
 
@@ -67,15 +67,88 @@ class AudioManager:
             self._input_queue = asyncio.Queue(maxsize=100)
 
         self._is_listening = True
+
+        # Smart mic selection: config override → real hardware mic → default
+        device = self._select_input_device()
+
         self._input_stream = sd.RawInputStream(
             samplerate=INPUT_SAMPLE_RATE,
             channels=CHANNELS,
             dtype=DTYPE,
             blocksize=INPUT_BLOCK_SIZE,
             callback=self._input_callback,
+            device=device,
         )
         self._input_stream.start()
-        logger.info("Mic capture started (16kHz mono PCM)")
+
+        device_name = sd.query_devices(device)['name'] if device is not None else 'system default'
+        logger.info(f"Mic capture started (16kHz mono PCM) — device: {device_name}")
+
+    @staticmethod
+    def _select_input_device():
+        """
+        Select the best input device.
+        Priority:
+          1. config 'mic_device' (index or name substring)
+          2. First real hardware microphone (skip virtual cables)
+          3. System default
+        """
+        from memory.config_manager import config as cfg
+
+        # 1. Manual override from config
+        mic_pref = cfg.get("mic_device", "")
+        if mic_pref:
+            # If it's a number, use as device index
+            try:
+                idx = int(mic_pref)
+                dev = sd.query_devices(idx)
+                if dev['max_input_channels'] > 0:
+                    logger.info(f"Using configured mic device [{idx}]: {dev['name']}")
+                    return idx
+            except (ValueError, sd.PortAudioError):
+                pass
+            # If it's a string, search by name
+            devices = sd.query_devices()
+            for i, d in enumerate(devices):
+                if mic_pref.lower() in d['name'].lower() and d['max_input_channels'] > 0:
+                    logger.info(f"Using configured mic device [{i}]: {d['name']}")
+                    return i
+
+        # 2. Auto-detect: find first real hardware microphone
+        #    Skip virtual cables, stereo mix, sound mappers, and loopback devices
+        skip_keywords = [
+            'virtual', 'cable', 'stereo mix', 'loopback', 'what u hear',
+            'sound mapper', 'primary sound',
+        ]
+        prefer_keywords = ['microphone', 'mic']
+
+        devices = sd.query_devices()
+        candidates = []
+        for i, d in enumerate(devices):
+            if d['max_input_channels'] <= 0:
+                continue
+            name_lower = d['name'].lower()
+            if any(kw in name_lower for kw in skip_keywords):
+                continue
+            # Prioritize devices with "microphone" or "mic" in the name
+            priority = 0 if any(kw in name_lower for kw in prefer_keywords) else 1
+            candidates.append((priority, i, d['name']))
+
+        if candidates:
+            candidates.sort()  # Lower priority number = better
+            best_idx = candidates[0][1]
+            best_name = candidates[0][2]
+            logger.info(f"Auto-selected mic [{best_idx}]: {best_name}")
+            return best_idx
+
+        # 3. Fall back to system default
+        default_idx = sd.default.device[0]
+        if default_idx is not None and default_idx >= 0:
+            dev = sd.query_devices(default_idx)
+            logger.info(f"Using default mic [{default_idx}]: {dev['name']}")
+            return default_idx
+
+        return None
 
     def start_output(self) -> None:
         """Start speaker playback stream."""

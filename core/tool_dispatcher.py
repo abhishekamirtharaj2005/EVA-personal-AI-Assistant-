@@ -187,4 +187,32 @@ def load_all_tools() -> None:
     import actions.proactive
     import actions.topic_monitor
 
+    # ── New feature modules (Phase 1) ───────────────────────────
+    import actions.spotify_control
+    import actions.personality
+    import actions.email_manager
+    import actions.focus_mode
+    import actions.expense_tracker
+    import actions.journal
+
+    # ── New feature modules (Phase 2) ───────────────────────────
+    import actions.smart_clipboard
+    import actions.calendar_manager
+    import actions.analytics
+    import actions.telegram_bridge
+    import actions.ocr_intelligence
+    import actions.smart_home
+    import actions.study_mode
+    import actions.multi_agent
+    import actions.image_gen
+    import actions.screen_recorder
+    import actions.location_service
+    import actions.password_manager
+    import actions.health_tracker
+    import actions.news_briefing
+    import actions.multi_monitor
+    import actions.language_manager
+    import actions.game_overlay
+    import actions.phone_integration
+
     logger.info(f"Loaded {get_tool_count()} tools: {get_tool_names()}")

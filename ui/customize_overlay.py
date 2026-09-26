@@ -69,6 +69,7 @@ class SettingsPanel(QWidget):
         self._tabs.addTab(self._build_api_tab(), "API KEYS")
         self._tabs.addTab(self._build_voice_tab(), "VOICE & MODEL")
         self._tabs.addTab(self._build_appearance_tab(), "APPEARANCE")
+        self._tabs.addTab(self._build_integrations_tab(), "INTEGRATIONS")
         self._tabs.addTab(self._build_system_tab(), "SYSTEM")
         root.addWidget(self._tabs)
 
@@ -169,6 +170,7 @@ class SettingsPanel(QWidget):
         layout.addWidget(self._section_label("LIVE MODEL"))
         self._model_combo = QComboBox()
         self._model_combo.addItems([
+            "gemini-3.8-flash",
             "gemini-3.1-flash-live-preview",
             "gemini-2.5-flash-preview-native-audio",
             "gemini-2.0-flash-live-001",
@@ -236,6 +238,97 @@ class SettingsPanel(QWidget):
         layout.addWidget(self._user_input)
 
         layout.addStretch()
+        return tab
+
+    def _build_integrations_tab(self) -> QWidget:
+        """Tab for Email, Telegram, Smart Home credentials."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        # ── Email ────────────────────────────────────────────
+        layout.addWidget(self._section_label("EMAIL (GMAIL / OUTLOOK)"))
+
+        self._email_address = QLineEdit()
+        self._email_address.setPlaceholderText("Email address (e.g. you@gmail.com)")
+        self._email_address.setFixedHeight(36)
+        self._email_address.setStyleSheet(f"""
+            QLineEdit {{
+                background: rgba(255,255,255,0.05);
+                border: 1px solid {theme.accent_dim.name()};
+                color: {theme.text_primary.name()};
+                padding: 6px 10px;
+                font-family: \"{theme.font_mono}\";
+                font-size: 11px;
+            }}
+        """)
+        layout.addWidget(self._email_address)
+
+        self._email_password = self._api_key_field(
+            "App Password (Gmail: myaccount.google.com/apppasswords)")
+        layout.addWidget(self._email_password)
+
+        email_hint = QLabel(
+            "// Gmail: Use App Password, NOT your normal password. "
+            "Enable 2FA first.")
+        email_hint.setFont(theme.font_hud(8))
+        email_hint.setStyleSheet(f"color: {theme.text_dim.name()};")
+        email_hint.setWordWrap(True)
+        layout.addWidget(email_hint)
+
+        # ── Telegram ─────────────────────────────────────────
+        layout.addSpacing(12)
+        layout.addWidget(self._section_label("TELEGRAM BOT"))
+
+        self._telegram_token = self._api_key_field(
+            "Bot Token (from @BotFather on Telegram)")
+        layout.addWidget(self._telegram_token)
+
+        tg_hint = QLabel(
+            "// Open Telegram → @BotFather → /newbot → copy token")
+        tg_hint.setFont(theme.font_hud(8))
+        tg_hint.setStyleSheet(f"color: {theme.text_dim.name()};")
+        layout.addWidget(tg_hint)
+
+        # ── Smart Home (Home Assistant) ──────────────────────
+        layout.addSpacing(12)
+        layout.addWidget(self._section_label("HOME ASSISTANT (SMART HOME)"))
+
+        self._ha_url = QLineEdit()
+        self._ha_url.setPlaceholderText("HA URL (e.g. http://192.168.1.100:8123)")
+        self._ha_url.setFixedHeight(36)
+        self._ha_url.setStyleSheet(f"""
+            QLineEdit {{
+                background: rgba(255,255,255,0.05);
+                border: 1px solid {theme.accent_dim.name()};
+                color: {theme.text_primary.name()};
+                padding: 6px 10px;
+                font-family: \"{theme.font_mono}\";
+                font-size: 11px;
+            }}
+        """)
+        layout.addWidget(self._ha_url)
+
+        self._ha_token = self._api_key_field(
+            "Long-Lived Access Token (HA → Profile → Tokens)")
+        layout.addWidget(self._ha_token)
+
+        ha_hint = QLabel(
+            "// For TP-Link Kasa devices: pip install python-kasa "
+            "(auto-discovers, no config needed)")
+        ha_hint.setFont(theme.font_hud(8))
+        ha_hint.setStyleSheet(f"color: {theme.text_dim.name()};")
+        ha_hint.setWordWrap(True)
+        layout.addWidget(ha_hint)
+
+        layout.addStretch()
+
+        note = QLabel("// All credentials stored locally in config/settings.json")
+        note.setFont(theme.font_hud(9))
+        note.setStyleSheet(f"color: {theme.text_dim.name()};")
+        layout.addWidget(note)
+
         return tab
 
     def _build_system_tab(self) -> QWidget:
@@ -355,6 +448,13 @@ class SettingsPanel(QWidget):
         self._ollama_model.setText(config.get("ollama_model", ""))
         self._refresh_ollama_status()
 
+        # Integrations
+        self._email_address.setText(config.get("email_address", ""))
+        self._email_password.setText(config.get("email_app_password", ""))
+        self._telegram_token.setText(config.get("telegram_bot_token", ""))
+        self._ha_url.setText(config.get("home_assistant_url", ""))
+        self._ha_token.setText(config.get("home_assistant_token", ""))
+
 
     def _save_and_close(self) -> None:
         """Save all settings and close."""
@@ -378,6 +478,12 @@ class SettingsPanel(QWidget):
             ollama_enabled=self._ollama_check.isChecked(),
             ollama_url=self._ollama_url.text().strip() or "http://localhost:11434",
             ollama_model=self._ollama_model.text().strip(),
+            # Integrations
+            email_address=self._email_address.text().strip(),
+            email_app_password=self._email_password.text().strip(),
+            telegram_bot_token=self._telegram_token.text().strip(),
+            home_assistant_url=self._ha_url.text().strip(),
+            home_assistant_token=self._ha_token.text().strip(),
         )
 
         # Apply accent color live
@@ -403,6 +509,12 @@ class SettingsPanel(QWidget):
         self._ollama_check.setChecked(True)
         self._ollama_url.setText("http://localhost:11434")
         self._ollama_model.clear()
+        # Integrations
+        self._email_address.clear()
+        self._email_password.clear()
+        self._telegram_token.clear()
+        self._ha_url.clear()
+        self._ha_token.clear()
 
     def _refresh_ollama_status(self) -> None:
         """Check Ollama server status and update the label."""
