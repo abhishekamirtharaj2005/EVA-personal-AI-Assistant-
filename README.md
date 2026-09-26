@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/EVA-v2.0_Cyberpunk-00f0ff?style=for-the-badge&logo=electron&logoColor=black" alt="EVA">
-  <img src="https://img.shields.io/badge/Gemini-3.8_Flash_Live_API-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Gemini 3.8 Flash">
+  <img src="https://img.shields.io/badge/Gemini-3.8_Live_API-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Gemini 3.8 Live">
   <img src="https://img.shields.io/badge/UI-PyQt6_HUD-41CD52?style=for-the-badge&logo=qt&logoColor=white" alt="PyQt6">
   <img src="https://img.shields.io/badge/Tools-53_Autonomous_Actions-ff007f?style=for-the-badge" alt="53 Tools">
   <img src="https://img.shields.io/badge/Platform-Windows_10%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows">
@@ -13,7 +13,7 @@
 
 ## ⚡ Overview
 
-**EVA (Enhanced Virtual Assistant)** is an autonomous, real-time voice-activated AI desktop companion inspired by next-generation sci-fi interfaces and powered by Google's **Gemini 3.8 Flash Live API**. 
+**EVA (Enhanced Virtual Assistant)** is an autonomous, real-time voice-activated AI desktop companion inspired by next-generation sci-fi interfaces and powered by Google's **Gemini 3.8 Live API** (`gemini-3.8-live`). 
 
 EVA operates via bidirectional, low-latency audio streaming: you talk, EVA listens, reasons, and speaks back naturally in real time. Backed by an extensible **53-tool autonomous action registry**, EVA can control your operating system, automate browser tasks, generate AI images, manage emails and Telegram messages, control IoT smart home devices, execute multi-agent developer swarms, manage finances, monitor hardware health, and adapt to custom personalities.
 
@@ -21,7 +21,7 @@ EVA operates via bidirectional, low-latency audio streaming: you talk, EVA liste
 
 ## ✨ Highlights & Key Capabilities
 
-- 🎙️ **Real-Time Bidirectional Voice**: Zero push-to-talk required. Conversational voice interaction powered by Gemini 3.8 Flash with interruptibility, auto-reconnect backoff, and smart microphone hardware detection.
+- 🎙️ **Real-Time Bidirectional Voice**: Zero push-to-talk required. Conversational voice interaction powered by Gemini 3.8 Live with interruptibility, auto-reconnect backoff, and smart microphone hardware detection.
 - 🗣️ **Wake Word Activation**: "Hey EVA" keyword spotting running in the background (lightweight transcript watcher + optional local neural net).
 - 🌌 **High-Aesthetic Cyberpunk HUD**: Custom PyQt6 canvas with orbiting satellite nodes, segmented energy field arcs, live streaming data tickers, matrix glitch pulses, audio-reactive breathing aura, and segmented neon telemetry bars.
 - 🛠️ **53 Registered Autonomous Tools**: Full system access ranging from mouse/keyboard automation, window switching, multi-monitor captures, file processing, and CLI dev tasks.
@@ -143,8 +143,8 @@ EVA's modular engine is organized across **44 action modules** registering **53 
 │  - Terminal Logs      │                           │
 │  - Drop Zone          │                           ▼
 └───────────────────────┘            ┌──────────────────────────────┐
-           ▲                         │  Google Gemini 3.8 Flash     │
-           │                         │  Live API (WebSocket Audio)  │
+           ▲                         │  Google Gemini 3.8 Live      │
+           │                         │  API (WebSocket Audio)       │
            ▼                         └──────────────┬───────────────┘
 ┌───────────────────────┐                           │ Function Calls
 │  FastAPI Dashboard    │                           ▼
@@ -227,7 +227,7 @@ python main.py
 | Parameter | Default | Description |
 |---|---|---|
 | `api_key` | `""` | Google Gemini API Key |
-| `preferred_model` | `"gemini-3.8-flash"` | Gemini model used for the Live session |
+| `preferred_model` | `"gemini-3.8-live"` | Gemini model used for the Live session |
 | `voice_name` | `"Aoede"` | Voice profile (`Aoede`, `Charon`, `Fenrir`, `Kore`, `Puck`) |
 | `accent_color` | `"#00f0ff"` | Cyberpunk HUD color (`#00f0ff`, `#32e632`, `#ff007f`, `#ffaa00`, `#9d4edd`) |
 | `proactive_mode` | `true` | Enables idle conversation check-ins |

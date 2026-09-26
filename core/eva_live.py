@@ -114,7 +114,12 @@ class EvaLive:
         )
 
         # Connect to Gemini Live (with auto-reconnect)
-        model = config.get("preferred_model", "gemini-3.8-flash")
+        model = config.get("preferred_model", "gemini-3.8-live")
+        # Normalize model names to Live API equivalents if needed
+        if "3.8-flash" in model or ("3.8" in model and "live" not in model):
+            model = "gemini-3.8-live"
+        elif "3.1-flash" in model and "live" not in model:
+            model = "gemini-3.1-flash-live-preview"
         max_retries = 10
         retry_delay = 5  # seconds, grows exponentially
 

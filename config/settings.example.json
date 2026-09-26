@@ -7,7 +7,7 @@
   "accent_color": "#00f0ff",
   "openai_api_key": "",
   "anthropic_api_key": "",
-  "preferred_model": "gemini-3.8-flash",
+  "preferred_model": "gemini-3.8-live",
   "voice_name": "Aoede",
   "morning_briefing": true,
   "proactive_mode": true,

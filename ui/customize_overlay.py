@@ -170,10 +170,10 @@ class SettingsPanel(QWidget):
         layout.addWidget(self._section_label("LIVE MODEL"))
         self._model_combo = QComboBox()
         self._model_combo.addItems([
-            "gemini-3.8-flash",
+            "gemini-3.8-live",
+            "gemini-3.8-live-extended-thinking",
             "gemini-3.1-flash-live-preview",
-            "gemini-2.5-flash-preview-native-audio",
-            "gemini-2.0-flash-live-001",
+            "gemini-2.5-flash-native-audio-latest",
         ])
         layout.addWidget(self._model_combo)
 

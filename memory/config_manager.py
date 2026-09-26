@@ -24,7 +24,7 @@ _DEFAULTS = {
     "user_name": "User",
 
     # ── Model & Voice ─────────────────────────────────────
-    "preferred_model": "gemini-3.8-flash",
+    "preferred_model": "gemini-3.8-live",
     "voice_name": "Aoede",       # Aoede, Charon, Fenrir, Kore, Puck
     "tts_enabled": True,
 
